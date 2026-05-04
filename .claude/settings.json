@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'SESSION END:' && echo '1. Rewrite HANDOFF.md \u2014 state, blockers, pitfalls, update date' && echo '2. Update docs/STATUS.md \u2014 progress, health, next priorities' && echo '3. Route learnings to correct docs/memory/ file'"
+          }
+        ]
+      }
+    ]
+  }
+}

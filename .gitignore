@@ -1,0 +1,19 @@
+# Environment files — never commit secrets
+/.idea
+.env
+
+# Claude session state — developer specific, not shared
+HANDOFF.md
+.claude/settings.local.json
+
+# Claude personal local rules — developer specific, not shared
+CLAUDE.local.md
+
+# Claude auto-memory — session/machine specific
+# Copy *.example.md files to their non-example versions on first clone
+docs/MEMORY.md
+docs/memory/*.md
+!docs/memory/*.example.md
+
+# Windows metadata files — created on download, never needed
+*:Zone.Identifier

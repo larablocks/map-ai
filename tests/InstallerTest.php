@@ -146,6 +146,18 @@ it('does not set backed_up for new copies', function () {
     }
 });
 
+it('reports identical and skips backup when file content matches stub', function () {
+    $stubContent = file_get_contents(Installer::stubsPath().'/AGENTS.md');
+    file_put_contents($this->tempDir.'/AGENTS.md', $stubContent);
+
+    $result = $this->installer->install($this->stubsPath, $this->tempDir, force: true);
+
+    $entry = array_values(array_filter($result['files'], fn ($f) => $f['file'] === 'AGENTS.md'))[0];
+    expect($entry['action'])->toBe('identical');
+    expect($entry['backed_up'])->toBeFalse();
+    expect($this->tempDir.'/AGENTS.md.bak')->not->toBeFile();
+});
+
 it('creates a backup when force-overwriting an existing file', function () {
     $agentsPath = $this->tempDir.'/AGENTS.md';
     file_put_contents($agentsPath, 'original content');

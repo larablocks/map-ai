@@ -26,3 +26,10 @@ database access — all persistence goes through Component Y."]
 
 ## What is intentionally excluded
 [Things that were considered and explicitly left out of scope.]
+
+## Component docs
+_Detailed subsystem docs — one file per component in docs/architecture/_
+_Copy docs/architecture/architecture.example.md to get started_
+| Component | File |
+|---|---|
+| [Name] | [docs/architecture/name.md] |

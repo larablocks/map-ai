@@ -25,7 +25,7 @@ it('resolves a valid stubs path', function () {
 });
 
 it('stubs path contains all expected files', function () {
-    foreach (Installer::FILES as $file) {
+    foreach ([...Installer::MANAGED_FILES, ...Installer::SCAFFOLD_FILES] as $file) {
         expect(Installer::stubsPath().'/'.$file)->toBeFile();
     }
 });
@@ -51,17 +51,6 @@ it('reports copy actions for new files', function () {
     expect($actions)->not->toContain('skip');
     expect($actions)->not->toContain('missing');
     expect($actions)->toContain('copy');
-});
-
-it('skips existing files without force', function () {
-    $agentsPath = $this->tempDir.'/AGENTS.md';
-    file_put_contents($agentsPath, 'custom content');
-
-    $result = $this->installer->install($this->stubsPath, $this->tempDir);
-
-    $skipped = array_filter($result['files'], fn ($f) => $f['file'] === 'AGENTS.md');
-    expect(array_values($skipped)[0]['action'])->toBe('skip');
-    expect(file_get_contents($agentsPath))->toBe('custom content');
 });
 
 it('overwrites existing files with force', function () {
@@ -179,11 +168,77 @@ it('does not set backed_up for skipped files', function () {
     expect(array_values($skipped)[0]['backed_up'])->toBeFalse();
 });
 
+it('returns out-of-date scaffold files that differ from stubs', function () {
+    file_put_contents($this->tempDir.'/AGENTS.md', 'custom content');
+
+    $outOfDate = $this->installer->scaffoldOutOfDate($this->stubsPath, $this->tempDir);
+
+    expect($outOfDate)->toContain('AGENTS.md');
+});
+
+it('excludes scaffold files that match the stub', function () {
+    $stubContent = file_get_contents($this->stubsPath.'/AGENTS.md');
+    file_put_contents($this->tempDir.'/AGENTS.md', $stubContent);
+
+    $outOfDate = $this->installer->scaffoldOutOfDate($this->stubsPath, $this->tempDir);
+
+    expect($outOfDate)->not->toContain('AGENTS.md');
+});
+
+it('excludes scaffold files that do not exist in the project', function () {
+    $outOfDate = $this->installer->scaffoldOutOfDate($this->stubsPath, $this->tempDir);
+
+    expect($outOfDate)->not->toContain('AGENTS.md');
+});
+
+it('updates managed files without force', function () {
+    $rulesPath = $this->tempDir.'/.claude/rules/security.md';
+    mkdir(dirname($rulesPath), 0755, true);
+    file_put_contents($rulesPath, 'old content');
+
+    $this->installer->install($this->stubsPath, $this->tempDir);
+
+    expect(file_get_contents($rulesPath))->not->toBe('old content');
+});
+
+it('reports update action for changed managed files without force', function () {
+    mkdir($this->tempDir.'/.claude/rules', 0755, true);
+    file_put_contents($this->tempDir.'/.claude/rules/security.md', 'old content');
+
+    $result = $this->installer->install($this->stubsPath, $this->tempDir);
+
+    $entry = array_values(array_filter($result['files'], fn ($f) => $f['file'] === '.claude/rules/security.md'))[0];
+    expect($entry['action'])->toBe('update');
+    expect($entry['backed_up'])->toBeFalse();
+    expect($this->tempDir.'/.claude/rules/security.md.bak')->not->toBeFile();
+});
+
+it('reports identical for managed files with unchanged content', function () {
+    $stubContent = file_get_contents($this->stubsPath.'/.claude/rules/security.md');
+    mkdir($this->tempDir.'/.claude/rules', 0755, true);
+    file_put_contents($this->tempDir.'/.claude/rules/security.md', $stubContent);
+
+    $result = $this->installer->install($this->stubsPath, $this->tempDir);
+
+    $entry = array_values(array_filter($result['files'], fn ($f) => $f['file'] === '.claude/rules/security.md'))[0];
+    expect($entry['action'])->toBe('identical');
+});
+
+it('skips scaffold files without force', function () {
+    file_put_contents($this->tempDir.'/AGENTS.md', 'custom content');
+
+    $result = $this->installer->install($this->stubsPath, $this->tempDir);
+
+    $entry = array_values(array_filter($result['files'], fn ($f) => $f['file'] === 'AGENTS.md'))[0];
+    expect($entry['action'])->toBe('skip');
+    expect(file_get_contents($this->tempDir.'/AGENTS.md'))->toBe('custom content');
+});
+
 it('root template files match stubs', function () {
     $rootPath = dirname($this->stubsPath);
     $normalize = fn (string $s): string => str_replace("\r\n", "\n", $s);
 
-    foreach (Installer::FILES as $file) {
+    foreach ([...Installer::MANAGED_FILES, ...Installer::SCAFFOLD_FILES] as $file) {
         $rootFile = $rootPath.'/'.$file;
         $stubFile = $this->stubsPath.'/'.$file;
 

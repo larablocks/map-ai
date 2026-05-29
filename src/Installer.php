@@ -16,28 +16,15 @@ class Installer
         'docs/memory/agents.example.md'         => 'docs/memory/agents.md',
     ];
 
-    public const FILES = [
-        'AGENTS.md',
-        'CLAUDE.md',
-        'GEMINI.md',
+    /** Framework-owned files — always kept in sync with the package stubs, never backed up. */
+    public const MANAGED_FILES = [
         'HANDOFF.example.md',
         'CLAUDE.local.example.md',
         '.claude/rules/security.md',
         '.claude/rules/testing.md',
         '.github/copilot-instructions.md',
         '.cursor/rules/agents.mdc',
-        'docs/ARCHITECTURE.md',
-        'docs/ARCHITECTURE_HISTORY.md',
-        'docs/BUGS.md',
-        'docs/BUGS_ARCHIVE.md',
-        'docs/CODE_PATTERNS.md',
-        'docs/DOCKER.md',
-        'docs/GLOSSARY.md',
         'docs/MEMORY.example.md',
-        'docs/SCHEMA.md',
-        'docs/SETUP.md',
-        'docs/STATUS.md',
-        'docs/TESTING_COVERAGE.md',
         'docs/agents/agent.example.md',
         'docs/api/api.example.md',
         'docs/architecture/architecture.example.md',
@@ -50,6 +37,24 @@ class Installer
         'docs/memory/gotchas.example.md',
         'docs/memory/shared.example.md',
         'docs/memory/testing.example.md',
+    ];
+
+    /** User-owned scaffold files — copied once on install, never overwritten without --force. */
+    public const SCAFFOLD_FILES = [
+        'AGENTS.md',
+        'CLAUDE.md',
+        'GEMINI.md',
+        'docs/ARCHITECTURE.md',
+        'docs/ARCHITECTURE_HISTORY.md',
+        'docs/BUGS.md',
+        'docs/BUGS_ARCHIVE.md',
+        'docs/CODE_PATTERNS.md',
+        'docs/DOCKER.md',
+        'docs/GLOSSARY.md',
+        'docs/SCHEMA.md',
+        'docs/SETUP.md',
+        'docs/STATUS.md',
+        'docs/TESTING_COVERAGE.md',
     ];
 
     private const GITIGNORE_BLOCK = <<<'BLOCK'
@@ -83,6 +88,23 @@ BLOCK;
         return dirname(__DIR__).'/stubs';
     }
 
+    /** @return list<string> Scaffold files that exist in the project but differ from the current stub. */
+    public function scaffoldOutOfDate(string $stubsPath, string $targetPath): array
+    {
+        $outOfDate = [];
+
+        foreach (self::SCAFFOLD_FILES as $file) {
+            $stub = $stubsPath.'/'.$file;
+            $project = $targetPath.'/'.$file;
+
+            if (file_exists($stub) && file_exists($project) && file_get_contents($stub) !== file_get_contents($project)) {
+                $outOfDate[] = $file;
+            }
+        }
+
+        return $outOfDate;
+    }
+
     /**
      * @param callable(array{action: 'copy'|'update'|'skip'|'identical'|'missing', file: string, backed_up: bool}): void|null $progress
      * @return array{
@@ -94,8 +116,16 @@ BLOCK;
     {
         $files = [];
 
-        foreach (self::FILES as $file) {
-            $result = $this->copyFile($stubsPath, $targetPath, $file, $force);
+        foreach (self::MANAGED_FILES as $file) {
+            $result = $this->copyFile($stubsPath, $targetPath, $file, force: true, backup: false);
+            $files[] = $result;
+            if ($progress !== null) {
+                $progress($result);
+            }
+        }
+
+        foreach (self::SCAFFOLD_FILES as $file) {
+            $result = $this->copyFile($stubsPath, $targetPath, $file, force: $force, backup: true);
             $files[] = $result;
             if ($progress !== null) {
                 $progress($result);
@@ -139,7 +169,7 @@ BLOCK;
     }
 
     /** @return array{action: 'copy'|'update'|'skip'|'identical'|'missing', file: string, backed_up: bool} */
-    private function copyFile(string $stubsPath, string $targetPath, string $file, bool $force): array
+    private function copyFile(string $stubsPath, string $targetPath, string $file, bool $force, bool $backup = true): array
     {
         $src = $stubsPath.'/'.$file;
         $dst = $targetPath.'/'.$file;
@@ -159,7 +189,9 @@ BLOCK;
                 return ['action' => 'identical', 'file' => $file, 'backed_up' => false];
             }
 
-            copy($dst, $dst.'.bak');
+            if ($backup) {
+                copy($dst, $dst.'.bak');
+            }
         }
 
         if (! is_dir(dirname($dst))) {
@@ -168,7 +200,7 @@ BLOCK;
 
         copy($src, $dst);
 
-        return ['action' => $action, 'file' => $file, 'backed_up' => $action === 'update'];
+        return ['action' => $action, 'file' => $file, 'backed_up' => $action === 'update' && $backup];
     }
 
     /** @return 'skipped'|'updated' */

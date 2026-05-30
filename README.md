@@ -100,7 +100,6 @@ AGENTS.md                          — master instructions every tool reads
 CLAUDE.md                          — Claude Code entry point (@AGENTS.md)
 GEMINI.md                          — Gemini CLI entry point (@AGENTS.md)
 HANDOFF.example.md                 — session state template (copy to HANDOFF.md)
-CLAUDE.local.example.md            — personal overrides template (gitignored)
 
 .claude/rules/security.md          — security rules, auto-loaded every session
 .claude/rules/testing.md           — coverage and test quality rules, auto-loaded

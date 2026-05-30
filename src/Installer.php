@@ -6,7 +6,6 @@ class Installer
 {
     public const PERSONAL_FILES = [
         'HANDOFF.example.md'                    => 'HANDOFF.md',
-        'CLAUDE.local.example.md'               => 'CLAUDE.local.md',
         'docs/MEMORY.example.md'                => 'docs/MEMORY.md',
         'docs/memory/gotchas.example.md'        => 'docs/memory/gotchas.md',
         'docs/memory/framework.example.md'      => 'docs/memory/framework.md',
@@ -19,7 +18,6 @@ class Installer
     /** Framework-owned files — always kept in sync with the package stubs, never backed up. */
     public const MANAGED_FILES = [
         'HANDOFF.example.md',
-        'CLAUDE.local.example.md',
         '.claude/rules/security.md',
         '.claude/rules/testing.md',
         '.github/copilot-instructions.md',

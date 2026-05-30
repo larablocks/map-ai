@@ -17,7 +17,6 @@ git clone [repo-url] && cd [project-name]
 # 2. Fill in AGENTS.md — line 2: project name and stack; line 3: today's date
 
 # 3. Initialize personal files (gitignored)
-cp HANDOFF.example.md HANDOFF.md
 cp docs/MEMORY.example.md docs/MEMORY.md
 cp docs/memory/gotchas.example.md docs/memory/gotchas.md
 cp docs/memory/framework.example.md docs/memory/[stack].md    # e.g. laravel.md; then update [stack].md ref in AGENTS.md and docs/MEMORY.md

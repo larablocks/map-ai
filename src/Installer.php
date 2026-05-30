@@ -5,7 +5,6 @@ namespace larablocks\MapAi;
 class Installer
 {
     public const PERSONAL_FILES = [
-        'HANDOFF.example.md'                    => 'HANDOFF.md',
         'docs/MEMORY.example.md'                => 'docs/MEMORY.md',
         'docs/memory/gotchas.example.md'        => 'docs/memory/gotchas.md',
         'docs/memory/framework.example.md'      => 'docs/memory/framework.md',
@@ -17,7 +16,6 @@ class Installer
 
     /** Framework-owned files — always kept in sync with the package stubs, never backed up. */
     public const MANAGED_FILES = [
-        'HANDOFF.example.md',
         '.claude/rules/security.md',
         '.claude/rules/testing.md',
         '.github/copilot-instructions.md',
@@ -58,8 +56,6 @@ class Installer
     private const GITIGNORE_BLOCK = <<<'BLOCK'
 
 # MAP — developer-specific files (do not commit)
-# Claude session state — developer specific, not shared
-HANDOFF.md
 .claude/settings.local.json
 
 # Claude personal local rules — developer specific, not shared
@@ -74,7 +70,6 @@ docs/memory/*.md
 BLOCK;
 
     private const GITIGNORE_SENTINELS = [
-        'HANDOFF.md',
         '.claude/settings.local.json',
         'CLAUDE.local.md',
         'docs/MEMORY.md',

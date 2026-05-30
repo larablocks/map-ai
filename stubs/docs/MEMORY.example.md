@@ -16,9 +16,8 @@ _Detail lives in memory/ files — this is the index only_
 
 ## Always load
 @memory/gotchas.md
-@memory/shared.md
+@memory/shared.md (if exists)
 
 ## Maintenance
 _¹ Rename [stack].md to match your stack (e.g. laravel.md) — update this path to match_
 _If an optional memory file is removed, remove its row from the summary table above_
-_If shared.md does not exist, remove the @memory/shared.md line above_

@@ -21,7 +21,7 @@ _Claude verifies build/test status by running commands — never assumes from la
 - [Initial structure committed]
 
 ## What's next
-_Project-level priorities — milestones and features, not session tasks (those go in HANDOFF.md)_
+_Project-level priorities — milestones and features, not individual session tasks_
 1. [First meaningful task]
 2. [Following task]
 3. [Following task]

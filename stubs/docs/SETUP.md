@@ -23,6 +23,7 @@ cp docs/memory/framework.example.md docs/memory/[stack].md    # e.g. laravel.md;
 cp docs/memory/database.example.md docs/memory/database.md
 cp docs/memory/testing.example.md docs/memory/testing.md
 cp docs/memory/environment.example.md docs/memory/environment.md
+cp docs/memory/performance.example.md docs/memory/performance.md
 cp docs/memory/agents.example.md docs/memory/agents.md  # optional — skip if no agent pipeline
 
 # 3b. Initialize shared team files (committed to repo — not gitignored)

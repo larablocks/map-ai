@@ -35,6 +35,8 @@ Read @docs/memory/agents.md when working on agent pipeline (skip if no agents)
 Read @docs/memory/database.md when touching the database or schema
 Read @docs/memory/testing.md when writing or debugging tests
 Read @docs/memory/environment.md when diagnosing environment issues
+Read @docs/memory/performance.md when investigating slow behaviour or optimising code
+Read @docs/FEATURE_FLAGS.md when starting a new feature or working on flagged code
 Read @docs/agents/[name].md when working on a specific agent
 Read @docs/api/[name].md when working on API endpoints
 Read @docs/integrations/[name].md when working with an external service
@@ -47,12 +49,14 @@ _Priority order: BUGS.md first, then ARCHITECTURE_HISTORY.md, then others_
 - Architectural decision made → append to docs/ARCHITECTURE_HISTORY.md (hard to reverse or multi-component only)
 - New pattern established → check docs/CODE_PATTERNS.md first, only append if not already covered
 - New domain term or abbreviation encountered → add to docs/GLOSSARY.md
-- Surprising behaviour → route by topic (all in docs/memory/): [stack].md | database.md | testing.md | environment.md | agents.md
+- Surprising behaviour → route by topic (all in docs/memory/): [stack].md | database.md | testing.md | environment.md | performance.md | agents.md
 - Memory file updated → update entry count in docs/MEMORY.md summary table
 - Time wasted on a mistake → append to docs/memory/gotchas.md (max 10 entries — remove least-actionable when full)
 - Schema changed → update docs/SCHEMA.md immediately
 - Architecture changed → update docs/ARCHITECTURE.md to reflect current state
 - Tests added or coverage run → update docs/TESTING_COVERAGE.md from command output
+- Performance issue discovered → append to docs/memory/performance.md
+- New feature started → suggest adding a feature flag before implementing; flag created → append row to docs/FEATURE_FLAGS.md active section; flag removed → move row to removed section
 - Task complete → ask the developer if they want a QA file generated; if yes, check branch name for ticket number (e.g. ABC-123) and create docs/qa/[TICKET].md or docs/qa/[feature-slug].md from the example
 
 ## Session end — do this before closing

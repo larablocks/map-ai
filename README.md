@@ -102,6 +102,7 @@ docs/BUGS_ARCHIVE.md               — fixed bugs (append-only)
 docs/ARCHITECTURE.md               — current system structure (AI-maintained)
 docs/ARCHITECTURE_HISTORY.md       — decision log (append-only)
 docs/CODE_PATTERNS.md              — project-specific patterns (AI-maintained)
+docs/FEATURE_FLAGS.md              — feature flag registry (AI-maintained)
 docs/SCHEMA.md                     — database schema and contracts (AI-maintained)
 docs/GLOSSARY.md                   — domain terms and abbreviations
 docs/DOCKER.md                     — container reference
@@ -114,6 +115,7 @@ docs/memory/framework.example.md   — framework/language surprises
 docs/memory/database.example.md    — database behaviour surprises
 docs/memory/testing.example.md     — test framework quirks
 docs/memory/environment.example.md — environment and Docker surprises
+docs/memory/performance.example.md — performance bottlenecks and surprises
 docs/memory/agents.example.md      — agent pipeline learnings (optional)
 docs/memory/shared.example.md      — team-shared learnings (committed)
 

@@ -11,6 +11,7 @@ class Installer
         'docs/memory/database.example.md'       => 'docs/memory/database.md',
         'docs/memory/testing.example.md'        => 'docs/memory/testing.md',
         'docs/memory/environment.example.md'    => 'docs/memory/environment.md',
+        'docs/memory/performance.example.md'    => 'docs/memory/performance.md',
         'docs/memory/agents.example.md'         => 'docs/memory/agents.md',
     ];
 
@@ -31,6 +32,7 @@ class Installer
         'docs/memory/environment.example.md',
         'docs/memory/framework.example.md',
         'docs/memory/gotchas.example.md',
+        'docs/memory/performance.example.md',
         'docs/memory/shared.example.md',
         'docs/memory/testing.example.md',
     ];
@@ -46,6 +48,7 @@ class Installer
         'docs/BUGS_ARCHIVE.md',
         'docs/CODE_PATTERNS.md',
         'docs/DOCKER.md',
+        'docs/FEATURE_FLAGS.md',
         'docs/GLOSSARY.md',
         'docs/SCHEMA.md',
         'docs/SETUP.md',

@@ -85,7 +85,6 @@ it('appends map entries to an empty gitignore', function () {
     $gitignore = file_get_contents($this->tempDir.'/.gitignore');
 
     expect($gitignore)
-        ->toContain('HANDOFF.md')
         ->toContain('.claude/settings.local.json')
         ->toContain('CLAUDE.local.md')
         ->toContain('docs/MEMORY.md')
@@ -104,7 +103,7 @@ it('appends map entries after existing gitignore content', function () {
 
     expect($gitignore)
         ->toStartWith($existing)
-        ->toContain('HANDOFF.md');
+        ->toContain('.claude/settings.local.json');
 });
 
 it('does not duplicate gitignore entries on re-install', function () {
@@ -112,7 +111,7 @@ it('does not duplicate gitignore entries on re-install', function () {
     $this->installer->install($this->stubsPath, $this->tempDir, force: true);
 
     $gitignore = file_get_contents($this->tempDir.'/.gitignore');
-    expect(substr_count($gitignore, 'HANDOFF.md'))->toBe(1);
+    expect(substr_count($gitignore, '.claude/settings.local.json'))->toBe(1);
 });
 
 it('returns updated for a new gitignore', function () {

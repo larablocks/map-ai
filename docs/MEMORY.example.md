@@ -13,6 +13,7 @@ _Detail lives in memory/ files — this is the index only_
 | docs/memory/database.md | 0 | — |
 | docs/memory/testing.md | 0 | — |
 | docs/memory/environment.md | 0 | — |
+| docs/memory/performance.md | 0 | — |
 
 ## Always load
 @memory/gotchas.md

@@ -1,3 +1,8 @@
+---
+name: [api-name]
+description: [One sentence: what this API does and when to load this file — scanned cheaply across docs/api/ before the full body is loaded]
+---
+
 # [API Name]
 _Copy this file to docs/api/[api-name].md when documenting a new API_
 _Load this file when working on this API_

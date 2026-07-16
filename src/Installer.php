@@ -42,14 +42,18 @@ class Installer
         'AGENTS.md',
         'CLAUDE.md',
         'GEMINI.md',
+        '.claude/skills/example-skill/SKILL.md',
         'docs/ARCHITECTURE.md',
         'docs/ARCHITECTURE_HISTORY.md',
         'docs/BUGS.md',
         'docs/BUGS_ARCHIVE.md',
         'docs/CODE_PATTERNS.md',
+        'docs/COMPLIANCE.md',
+        'docs/DESIGN.md',
         'docs/DOCKER.md',
         'docs/FEATURE_FLAGS.md',
         'docs/GLOSSARY.md',
+        'docs/METRICS_HISTORY.md',
         'docs/SCHEMA.md',
         'docs/SETUP.md',
         'docs/STATUS.md',
@@ -79,6 +83,20 @@ BLOCK;
         'docs/memory/*.md',
     ];
 
+    /**
+     * merge=union lets concurrent appends to these append-only logs combine automatically
+     * instead of producing conflict markers. It does not catch two branches assigning the
+     * same BUG-N — docs/BUGS.md documents the post-merge renumbering procedure for that.
+     */
+    private const GITATTRIBUTES_HEADER = '# MAP — merge-friendly append-only logs';
+
+    private const GITATTRIBUTES_ENTRIES = [
+        'docs/BUGS.md merge=union',
+        'docs/BUGS_ARCHIVE.md merge=union',
+        'docs/ARCHITECTURE_HISTORY.md merge=union',
+        'docs/METRICS_HISTORY.md merge=union',
+    ];
+
     public static function stubsPath(): string
     {
         return dirname(__DIR__).'/stubs';
@@ -105,7 +123,8 @@ BLOCK;
      * @param callable(array{action: 'copy'|'update'|'skip'|'identical'|'missing', file: string, backed_up: bool}): void|null $progress
      * @return array{
      *     files: list<array{action: 'copy'|'update'|'skip'|'identical'|'missing', file: string, backed_up: bool}>,
-     *     gitignore: 'updated'|'skipped'
+     *     gitignore: 'updated'|'skipped',
+     *     gitattributes: 'updated'|'skipped'
      * }
      */
     public function install(string $stubsPath, string $targetPath, bool $force = false, ?callable $progress = null): array
@@ -131,6 +150,7 @@ BLOCK;
         return [
             'files' => $files,
             'gitignore' => $this->mergeGitignore($targetPath),
+            'gitattributes' => $this->mergeGitattributes($targetPath),
         ];
     }
 
@@ -215,5 +235,30 @@ BLOCK;
         }
 
         return 'skipped';
+    }
+
+    /** @return 'skipped'|'updated' */
+    private function mergeGitattributes(string $targetPath): string
+    {
+        $gitattributesPath = $targetPath.'/.gitattributes';
+        $existing = file_exists($gitattributesPath) ? (file_get_contents($gitattributesPath) ?: '') : '';
+        $existingLines = $existing !== '' ? array_map('trim', explode("\n", $existing)) : [];
+
+        $missing = array_values(array_diff(self::GITATTRIBUTES_ENTRIES, $existingLines));
+
+        if ($missing === []) {
+            return 'skipped';
+        }
+
+        // Only re-emit the header comment on a first write — a partial match means the
+        // header is already there, so appending just the missing entries avoids duplicating
+        // lines that already exist.
+        $addition = $missing === self::GITATTRIBUTES_ENTRIES
+            ? "\n".self::GITATTRIBUTES_HEADER."\n".implode("\n", self::GITATTRIBUTES_ENTRIES)."\n"
+            : "\n".implode("\n", $missing)."\n";
+
+        file_put_contents($gitattributesPath, $existing.$addition);
+
+        return 'updated';
     }
 }

@@ -38,8 +38,12 @@ it('copies all files to the target directory', function () {
     expect($this->tempDir.'/GEMINI.md')->toBeFile();
     expect($this->tempDir.'/docs/STATUS.md')->toBeFile();
     expect($this->tempDir.'/docs/BUGS.md')->toBeFile();
+    expect($this->tempDir.'/docs/COMPLIANCE.md')->toBeFile();
+    expect($this->tempDir.'/docs/METRICS_HISTORY.md')->toBeFile();
+    expect($this->tempDir.'/docs/DESIGN.md')->toBeFile();
     expect($this->tempDir.'/.claude/rules/security.md')->toBeFile();
     expect($this->tempDir.'/.claude/rules/testing.md')->toBeFile();
+    expect($this->tempDir.'/.claude/skills/example-skill/SKILL.md')->toBeFile();
     expect($this->tempDir.'/.github/copilot-instructions.md')->toBeFile();
     expect($this->tempDir.'/docs/memory/gotchas.example.md')->toBeFile();
 });
@@ -76,6 +80,7 @@ it('creates nested directories', function () {
 
     expect($this->tempDir.'/docs/memory')->toBeDirectory();
     expect($this->tempDir.'/.claude/rules')->toBeDirectory();
+    expect($this->tempDir.'/.claude/skills/example-skill')->toBeDirectory();
     expect($this->tempDir.'/.github')->toBeDirectory();
 });
 
@@ -123,6 +128,61 @@ it('returns skipped when gitignore entries already present', function () {
     $this->installer->install($this->stubsPath, $this->tempDir);
     $result = $this->installer->install($this->stubsPath, $this->tempDir, force: true);
     expect($result['gitignore'])->toBe('skipped');
+});
+
+it('appends merge=union entries to an empty gitattributes', function () {
+    $this->installer->install($this->stubsPath, $this->tempDir);
+
+    $gitattributes = file_get_contents($this->tempDir.'/.gitattributes');
+
+    expect($gitattributes)
+        ->toContain('docs/BUGS.md merge=union')
+        ->toContain('docs/BUGS_ARCHIVE.md merge=union')
+        ->toContain('docs/ARCHITECTURE_HISTORY.md merge=union')
+        ->toContain('docs/METRICS_HISTORY.md merge=union');
+});
+
+it('appends gitattributes entries after existing content', function () {
+    $existing = "* text=auto eol=lf\n";
+    file_put_contents($this->tempDir.'/.gitattributes', $existing);
+
+    $this->installer->install($this->stubsPath, $this->tempDir);
+
+    $gitattributes = file_get_contents($this->tempDir.'/.gitattributes');
+
+    expect($gitattributes)
+        ->toStartWith($existing)
+        ->toContain('docs/BUGS.md merge=union');
+});
+
+it('does not duplicate gitattributes entries on re-install', function () {
+    $this->installer->install($this->stubsPath, $this->tempDir);
+    $this->installer->install($this->stubsPath, $this->tempDir, force: true);
+
+    $gitattributes = file_get_contents($this->tempDir.'/.gitattributes');
+    expect(substr_count($gitattributes, 'docs/BUGS.md merge=union'))->toBe(1);
+});
+
+it('appends only the missing gitattributes entries when some already exist', function () {
+    $partial = "docs/BUGS.md merge=union\ndocs/BUGS_ARCHIVE.md merge=union\ndocs/ARCHITECTURE_HISTORY.md merge=union\n";
+    file_put_contents($this->tempDir.'/.gitattributes', $partial);
+
+    $result = $this->installer->install($this->stubsPath, $this->tempDir);
+
+    $gitattributes = file_get_contents($this->tempDir.'/.gitattributes');
+    expect(substr_count($gitattributes, 'docs/BUGS.md merge=union'))->toBe(1);
+    expect(substr_count($gitattributes, 'docs/BUGS_ARCHIVE.md merge=union'))->toBe(1);
+    expect(substr_count($gitattributes, 'docs/ARCHITECTURE_HISTORY.md merge=union'))->toBe(1);
+    expect($gitattributes)->toContain('docs/METRICS_HISTORY.md merge=union');
+    expect($result['gitattributes'])->toBe('updated');
+});
+
+it('returns updated for new gitattributes and skipped once present', function () {
+    $result = $this->installer->install($this->stubsPath, $this->tempDir);
+    expect($result['gitattributes'])->toBe('updated');
+
+    $result = $this->installer->install($this->stubsPath, $this->tempDir, force: true);
+    expect($result['gitattributes'])->toBe('skipped');
 });
 
 it('does not set backed_up for new copies', function () {

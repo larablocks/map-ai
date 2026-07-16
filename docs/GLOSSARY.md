@@ -1,6 +1,6 @@
 # GLOSSARY.md
-_Domain terms, abbreviations, and concepts Claude should understand_
-_Human-maintained — add entries when domain-specific language causes confusion_
+_Domain terms, abbreviations, and concepts a newcomer wouldn't know_
+_Claude-maintained — append immediately when a project-specific term is encountered; human reviews for accuracy_
 _Last updated: YYYY-MM-DD_
 
 ## Terms

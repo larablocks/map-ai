@@ -1,3 +1,8 @@
+---
+name: [component-name]
+description: [One sentence: what this component owns and when to load this file — scanned cheaply across docs/architecture/ before the full body is loaded]
+---
+
 # [Component Name]
 _Copy this file to docs/architecture/[component-name].md when documenting a subsystem_
 _Load this file when working on this component or subsystem_

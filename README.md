@@ -28,9 +28,19 @@ Without it, each AI session starts from zero. With it, sessions start informed.
 
 `docs/BUGS.md` is a live list the AI maintains automatically — appended on discovery, moved to `docs/BUGS_ARCHIVE.md` on fix. Known issues don't disappear from context at session end.
 
+Both files carry `BUG-N` IDs and ship with `merge=union` set in `.gitattributes`, so two branches appending entries at the same time combine cleanly instead of producing conflict markers. If two branches independently assign the same `BUG-N`, the AI is instructed to notice after a merge and renumber the duplicate — `docs/BUGS.md` documents the exact procedure.
+
 ### Security and testing standards apply every session
 
 `.claude/rules/security.md` and `.claude/rules/testing.md` load automatically each Claude Code session. The AI follows your coverage requirements and security practices without being reminded.
+
+### Compliance obligations are project-specific, not generic
+
+`docs/COMPLIANCE.md` documents this project's actual regulatory obligations — data classification, retention, audit requirements, whatever frameworks apply (GDPR, HIPAA, SOC2…). It's loaded whenever the AI touches sensitive data, exports, deletions, or third-party integrations, and changes there require explicit confirmation before proceeding. This is distinct from `.claude/rules/security.md`, which only covers generic secret hygiene.
+
+### Leadership gets a numbers trend, not just a snapshot
+
+`docs/STATUS.md` shows current health; `docs/METRICS_HISTORY.md` is the append-only log behind it — one dated entry per session end (test count, coverage, bug counts, milestone progress vs. the previous entry). Non-engineers can skim it for a trend line without reading commit history or code.
 
 ### One source of truth, four tools
 
@@ -58,6 +68,7 @@ MAP defines a set of **write rules** — declarative triggers built into `AGENTS
 | A schema change | `docs/SCHEMA.md` — updated immediately |
 | An architecture change | `docs/ARCHITECTURE.md` — updated to reflect current state |
 | Tests added or coverage run | `docs/TESTING_COVERAGE.md` — from actual output, never estimated |
+| Session end | `docs/METRICS_HISTORY.md` — dated entry appended, current metrics vs. the previous one |
 
 Writes happen immediately — not deferred to session end, not optional. When the AI finds a bug mid-task, it appends to `BUGS.md` before continuing. When it makes an architectural call, it records the decision and reasoning before moving on. The priority order is fixed: `BUGS.md` first, `ARCHITECTURE_HISTORY.md` second, everything else after.
 
@@ -93,6 +104,7 @@ CLAUDE.md                          — Claude Code entry point (@AGENTS.md)
 GEMINI.md                          — Gemini CLI entry point (@AGENTS.md)
 .claude/rules/security.md          — security rules, auto-loaded every session
 .claude/rules/testing.md           — coverage and test quality rules, auto-loaded
+.claude/skills/example-skill/SKILL.md — template for a Claude Code skill (auto-discovered, no wiring needed)
 .github/copilot-instructions.md    — Copilot entry point (AGENTS.md inlined)
 .cursor/rules/agents.mdc           — Cursor entry point (@AGENTS.md)
 
@@ -104,10 +116,13 @@ docs/ARCHITECTURE_HISTORY.md       — decision log (append-only)
 docs/CODE_PATTERNS.md              — project-specific patterns (AI-maintained)
 docs/FEATURE_FLAGS.md              — feature flag registry (AI-maintained)
 docs/SCHEMA.md                     — database schema and contracts (AI-maintained)
-docs/GLOSSARY.md                   — domain terms and abbreviations
+docs/COMPLIANCE.md                 — regulatory/compliance obligations (human-maintained)
+docs/DESIGN.md                     — UI/frontend conventions (optional — delete if no UI layer)
+docs/GLOSSARY.md                   — domain terms and abbreviations (AI-maintained)
 docs/DOCKER.md                     — container reference
 docs/SETUP.md                      — local dev setup for new developers
 docs/TESTING_COVERAGE.md           — coverage tracking (AI-maintained from output)
+docs/METRICS_HISTORY.md            — dated metrics log for leadership (AI-maintained, append-only)
 
 docs/MEMORY.example.md             — memory index template (copy to MEMORY.md)
 docs/memory/gotchas.example.md     — critical mistakes to avoid
@@ -119,10 +134,18 @@ docs/memory/performance.example.md — performance bottlenecks and surprises
 docs/memory/agents.example.md      — agent pipeline learnings (optional)
 docs/memory/shared.example.md      — team-shared learnings (committed)
 
-docs/agents/agent.example.md       — template for documenting a specific agent
-docs/api/api.example.md            — template for documenting an API
-docs/integrations/integration.example.md — template for documenting an integration
+docs/agents/agent.example.md       — template for documenting a specific agent (name + description frontmatter)
+docs/api/api.example.md            — template for documenting an API (name + description frontmatter)
+docs/architecture/architecture.example.md — template for documenting a subsystem or component (name + description frontmatter)
+docs/integrations/integration.example.md — template for documenting an integration (name + description frontmatter)
+docs/qa/qa.example.md              — template for a completed feature's QA notes
 ```
+
+### Cheap discovery for per-item docs
+
+`docs/agents/`, `docs/api/`, `docs/integrations/`, and `docs/architecture/` can hold many files — one per agent, endpoint, integration, or component. Each one starts with plain YAML frontmatter (`name` + `description`), the same progressive-disclosure idea behind Claude Code's `SKILL.md` files: scan the cheap part across every file in the folder to find the one that matches, then load only that file's full body. It's plain YAML in a markdown file, so every MAP-supported tool can use or ignore it — this is a MAP-internal convention for keeping "load when relevant" cheap at scale, not a claim of compatibility with Claude Code's native Skill discovery, which is a separate mechanism scoped to `.claude/skills/`.
+
+For that native mechanism, MAP ships `.claude/skills/example-skill/SKILL.md` — a starting point for Claude-Code-specific, invocable skills (as opposed to the passive context docs above). Copy the folder, rename it, and Claude Code auto-discovers it; nothing in `AGENTS.md` needs to change. It's Claude-Code-only, so it lives under `.claude/` alongside `.claude/rules/` rather than in the tool-agnostic `docs/` tree.
 
 ---
 
@@ -148,7 +171,7 @@ $result = (new Installer)->install(
 );
 ```
 
-`$result` contains a `files` array with per-file `action` (`copy`, `update`, `skip`, `missing`) and `backed_up` (true when an existing file was backed up to `<file>.bak` before overwriting), plus a `gitignore` key (`updated` or `skipped`).
+`$result` contains a `files` array with per-file `action` (`copy`, `update`, `skip`, `missing`) and `backed_up` (true when an existing file was backed up to `<file>.bak` before overwriting), plus `gitignore` and `gitattributes` keys (each `updated` or `skipped`).
 
 ## Development
 

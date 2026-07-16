@@ -37,10 +37,9 @@ FILES=(
   AGENTS.md
   CLAUDE.md
   GEMINI.md
-  HANDOFF.example.md
-  CLAUDE.local.example.md
   .claude/rules/security.md
   .claude/rules/testing.md
+  .claude/skills/example-skill/SKILL.md
   .github/copilot-instructions.md
   .cursor/rules/agents.mdc
   docs/ARCHITECTURE.md
@@ -48,29 +47,34 @@ FILES=(
   docs/BUGS.md
   docs/BUGS_ARCHIVE.md
   docs/CODE_PATTERNS.md
+  docs/COMPLIANCE.md
+  docs/DESIGN.md
   docs/DOCKER.md
+  docs/FEATURE_FLAGS.md
   docs/GLOSSARY.md
   docs/MEMORY.example.md
+  docs/METRICS_HISTORY.md
   docs/SCHEMA.md
   docs/SETUP.md
   docs/STATUS.md
   docs/TESTING_COVERAGE.md
   docs/agents/agent.example.md
   docs/api/api.example.md
+  docs/architecture/architecture.example.md
   docs/integrations/integration.example.md
+  docs/qa/qa.example.md
   docs/memory/agents.example.md
   docs/memory/database.example.md
   docs/memory/environment.example.md
   docs/memory/framework.example.md
   docs/memory/gotchas.example.md
+  docs/memory/performance.example.md
   docs/memory/shared.example.md
   docs/memory/testing.example.md
 )
 
 # .gitignore lines to merge into the target (in order)
 GITIGNORE_BLOCK=(
-  "# Claude session state — developer specific, not shared"
-  "HANDOFF.md"
   ".claude/settings.local.json"
   ""
   "# Claude personal local rules — developer specific, not shared"
@@ -82,6 +86,17 @@ GITIGNORE_BLOCK=(
   "docs/memory/*.md"
   "!docs/memory/*.example.md"
   "!docs/memory/shared.md"
+)
+
+# .gitattributes lines to merge into the target (in order)
+# merge=union lets concurrent appends to these append-only logs combine automatically
+# instead of producing conflict markers. See docs/BUGS.md for the post-merge procedure
+# for two branches that independently assigned the same BUG-N.
+GITATTRIBUTES_BLOCK=(
+  "docs/BUGS.md merge=union"
+  "docs/BUGS_ARCHIVE.md merge=union"
+  "docs/ARCHITECTURE_HISTORY.md merge=union"
+  "docs/METRICS_HISTORY.md merge=union"
 )
 
 # ---------------------------------------------------------------------------
@@ -156,6 +171,45 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Merge .gitattributes
+# ---------------------------------------------------------------------------
+echo ""
+echo "Merging .gitattributes..."
+
+GITATTRIBUTES_FILE="$TARGET/.gitattributes"
+touch "$GITATTRIBUTES_FILE"
+
+MISSING_ATTRS=()
+for line in "${GITATTRIBUTES_BLOCK[@]}"; do
+  if ! grep -qxF "$line" "$GITATTRIBUTES_FILE"; then
+    MISSING_ATTRS+=("$line")
+  fi
+done
+
+if [[ ${#MISSING_ATTRS[@]} -eq 0 ]]; then
+  echo "  [SKIP]   .gitattributes — MAP entries already present"
+elif [[ ${#MISSING_ATTRS[@]} -eq ${#GITATTRIBUTES_BLOCK[@]} ]]; then
+  {
+    echo ""
+    echo "# MAP — merge-friendly append-only logs"
+    for line in "${GITATTRIBUTES_BLOCK[@]}"; do
+      echo "$line"
+    done
+  } >> "$GITATTRIBUTES_FILE"
+  echo "  [UPDATE] .gitattributes — MAP entries appended"
+else
+  # Some entries already present — append only the missing ones so existing
+  # lines aren't duplicated.
+  {
+    echo ""
+    for line in "${MISSING_ATTRS[@]}"; do
+      echo "$line"
+    done
+  } >> "$GITATTRIBUTES_FILE"
+  echo "  [UPDATE] .gitattributes — MAP entries appended"
+fi
+
+# ---------------------------------------------------------------------------
 # Summary and next steps
 # ---------------------------------------------------------------------------
 echo ""
@@ -166,6 +220,6 @@ echo "  1. Edit AGENTS.md line 2 — set project name and stack"
 echo "  2. Edit AGENTS.md line 3 — set today's date"
 echo "  3. Fill in the Commands section of AGENTS.md (test, build, start)"
 echo "  4. Each developer runs the 'cp' commands in docs/SETUP.md step 3"
-echo "     to initialize their personal gitignored files (HANDOFF.md, docs/MEMORY.md, etc.)"
+echo "     to initialize their personal gitignored files (docs/MEMORY.md, etc.)"
 echo ""
 echo "MAP install complete."

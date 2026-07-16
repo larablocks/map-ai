@@ -1,11 +1,20 @@
 {
+  "permissions": {
+    "allow": [
+      "mcp__laravel-boost__database-query",
+      "mcp__laravel-boost__search-docs",
+      "mcp__laravel-boost__database-schema",
+      "mcp__laravel-boost__last-error",
+      "Bash(composer test *)"
+    ]
+  },
   "hooks": {
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'SESSION END:' && echo '1. Rewrite HANDOFF.md \u2014 state, blockers, pitfalls, update date' && echo '2. Update docs/STATUS.md \u2014 progress, health, next priorities' && echo '3. Route learnings to correct docs/memory/ file'"
+            "command": "echo 'SESSION END:' && echo '1. Confirm stubs/<file> and its root-level mirror match for any template files touched' && echo '2. If AGENTS.md, .claude/rules/security.md, or .claude/rules/testing.md changed, update .github/copilot-instructions.md (stubs/ and root) to match' && echo '3. Flag any inconsistencies found across template files'"
           }
         ]
       }

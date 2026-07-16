@@ -1,3 +1,8 @@
+---
+name: [service-name]
+description: [One sentence: why this project uses this service and when to load this file — scanned cheaply across docs/integrations/ before the full body is loaded]
+---
+
 # [Service Name]
 _Copy this file to docs/integrations/[service-name].md when documenting a new integration_
 _Load this file when working with this service_

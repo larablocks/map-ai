@@ -1,3 +1,8 @@
+---
+name: [agent-name]
+description: [One sentence: what this agent does and when to load this file — scanned cheaply across docs/agents/ before the full body is loaded]
+---
+
 # [Agent Name] Agent
 _Copy this file to docs/agents/[agent-name].md when creating a new agent_
 _Load this file when working on this agent_

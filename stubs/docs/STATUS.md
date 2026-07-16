@@ -27,6 +27,7 @@ _Project-level priorities — milestones and features, not individual session ta
 3. [Following task]
 
 ## Metrics snapshot
+_Trend is computed against the previous entry in docs/METRICS_HISTORY.md — that file is the leadership-facing history, this table is just the current snapshot._
 | Metric | Value | Trend |
 |---|---|---|
 | Test count | 0 | — |

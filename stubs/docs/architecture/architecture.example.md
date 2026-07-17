@@ -6,6 +6,10 @@ description: [One sentence: what this component owns and when to load this file 
 # [Component Name]
 _Copy this file to docs/architecture/[component-name].md when documenting a subsystem_
 _Load this file when working on this component or subsystem_
+_Can also hold a forward spec for a planned-but-unbuilt component — if so, mark it clearly under Status below so the AI doesn't assume it already exists in code_
+
+## Status
+[Built / Planned — if Planned, say so explicitly and note what's blocking implementation]
 
 ## Responsibility
 [What this component owns and is solely responsible for. One sentence.]

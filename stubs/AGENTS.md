@@ -4,11 +4,10 @@ _MAP v1.0 | Last updated: [DATE]_
 
 ## Personal rules
 Load @CLAUDE.local.md if it exists or equivalent local rules file for your tool — overrides AGENTS.md
-If @docs/MEMORY.md does not exist — developer has not run docs/SETUP.md step 3 yet.
 
 ## Session start ritual
 1. Read @docs/STATUS.md — if it contains only placeholder text, tell developer to fill it in
-2. Read @docs/MEMORY.md — if it exists, load @docs/memory/gotchas.md and @docs/memory/shared.md (if exists) and note topic files
+2. Read @docs/MEMORY.md — if missing, create it from docs/MEMORY.example.md (and docs/memory/gotchas.md, docs/memory/shared.md from their examples if also missing), then load it and note topic files — any other docs/memory/*.md a Load rule below names self-creates from its same-named .example.md the first time that rule fires
 3. Read @docs/BUGS.md — note any blocking or high severity bugs before starting work
 4. Ask the developer what they want to work on before acting
 
@@ -31,8 +30,9 @@ Read @docs/TESTING_COVERAGE.md when writing or reviewing tests
 Read @docs/DOCKER.md when running commands or diagnosing environment issues (skip if project has no Docker)
 Read @docs/SETUP.md when helping with local dev or onboarding questions
 Read @docs/GLOSSARY.md when domain-specific terms or abbreviations are unfamiliar
-Read @docs/DESIGN.md when working on UI/frontend code (skip if the project has no UI layer)
-Read @docs/memory/[stack].md when writing application code, migrations, config or scripts — past surprises
+Read @docs/COMMANDS.md when running or referencing a custom project command
+Read @docs/DESIGN.md when writing frontend code or UI components (skip if no UI layer) — it wins over conflicting code by default; once per session, run `npx @google/design.md lint` first if available, skip silently if not
+Read the project's stack-specific memory file (see docs/MEMORY.md's summary table for its filename) when writing application code, migrations, config or scripts — past surprises; if the table still shows the framework.example.md placeholder row, self-create the file by copying docs/memory/framework.example.md to a name matching the project's stack (e.g. laravel.md) and update that row
 Read @docs/memory/agents.md when working on agent pipeline (skip if no agents)
 Read @docs/memory/database.md when touching the database or schema
 Read @docs/memory/testing.md when writing or debugging tests
@@ -49,7 +49,7 @@ _Priority order: BUGS.md first, then ARCHITECTURE_HISTORY.md, then others_
 - Architectural decision made → append to docs/ARCHITECTURE_HISTORY.md (hard to reverse or multi-component only)
 - New pattern established → check docs/CODE_PATTERNS.md first, only append if not already covered
 - Project-specific term, abbreviation, or concept a newcomer wouldn't know → add to docs/GLOSSARY.md so new developers can gain context quickly
-- Surprising behaviour → route by topic (all in docs/memory/): [stack].md | database.md | testing.md | environment.md | performance.md | agents.md
+- Surprising behaviour → route by topic (all in docs/memory/): the stack-specific file (see docs/MEMORY.md's table) | database.md | testing.md | environment.md | performance.md | agents.md
 - Learning applies to the whole team, not just one machine → also append to docs/memory/shared.md (max 50 entries — remove least-actionable when full)
 - Memory file updated → update entry count in docs/MEMORY.md summary table
 - Time wasted on a mistake → append to docs/memory/gotchas.md (max 10 entries — remove least-actionable when full)
@@ -58,7 +58,9 @@ _Priority order: BUGS.md first, then ARCHITECTURE_HISTORY.md, then others_
 - Tests added or coverage run → update docs/TESTING_COVERAGE.md from command output
 - Performance issue discovered → append to docs/memory/performance.md
 - New feature started → suggest adding a feature flag before implementing; flag created → append row to docs/FEATURE_FLAGS.md active section; flag removed → move row to removed section
+- Custom command added, changed, or removed → update docs/COMMANDS.md in the relevant category (add, edit, or delete the entry and its Quick index row), note if destructive
 - Agent/API/integration/component changes materially → update its docs/agents|api|integrations|architecture/[name].md file (including its frontmatter description); new docs/architecture/[name].md → also add its row to ARCHITECTURE.md's Component docs table
+- A design token changes, Docker/environment config changes, a setup step changes, or a compliance obligation changes → do NOT edit docs/DESIGN.md, docs/DOCKER.md, docs/SETUP.md, or docs/COMPLIANCE.md directly; draft the proposed change inline in your response and ask the developer to confirm before writing it (these four wait for approval — every other file above is written immediately)
 - Task complete → ask the developer if they want a QA file generated; if yes, check branch name for ticket number (e.g. ABC-123) and create docs/qa/[TICKET].md or docs/qa/[feature-slug].md from the example
 
 ## Session end — do this before closing
@@ -67,7 +69,7 @@ _Priority order: BUGS.md first, then ARCHITECTURE_HISTORY.md, then others_
 3. Ask "what did I learn?" — route each learning to docs/memory/ and update MEMORY.md entry counts
 
 ## File routing — when in doubt
-Project health → docs/STATUS.md | Decisions → docs/ARCHITECTURE_HISTORY.md
+Project health → docs/STATUS.md | Decisions → docs/ARCHITECTURE_HISTORY.md | Custom commands → docs/COMMANDS.md
 Bugs → docs/BUGS.md | Old fixed bugs → docs/BUGS_ARCHIVE.md | Learnings → docs/memory/[topic].md
 New agent/API/integration/component docs → scan the target folder's frontmatter for an existing match first, then copy the relevant .example.md and fill in its name/description
 QA file → docs/qa/[TICKET].md or docs/qa/[feature-slug].md (generated by Claude on task complete)
@@ -85,3 +87,6 @@ QA file → docs/qa/[TICKET].md or docs/qa/[feature-slug].md (generated by Claud
 - Use YYYY-MM-DD for all dates in all files
 - IMPORTANT: Only update docs/TESTING_COVERAGE.md after running coverage — never estimate without fresh output
 - IMPORTANT: Never skip the session start ritual
+
+## Project hard rules
+[Project-specific hard rules that don't fit the generic list above — e.g. "never call the production billing API from a dev session." Delete this line once real rules are added; leave the section empty if there are none yet.]

@@ -1,6 +1,7 @@
 # DOCKER.md
-_Docker container reference — human-maintained_
+_Docker container reference — human-authored, Claude proposes changes for developer approval_
 _Environment-specific gotchas go in docs/memory/environment.md_
+_Human approves all changes — Claude proposes, does not write directly._
 _Last updated: YYYY-MM-DD_
 
 ## Services

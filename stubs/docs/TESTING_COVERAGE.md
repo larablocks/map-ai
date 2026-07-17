@@ -1,6 +1,7 @@
 # TESTING_COVERAGE.md
 _Updated by Claude after running the coverage command and reviewing results_
 _Do not update without running the coverage command first — never estimate from memory_
+_A `[none]`/`[partial]` row here is a coverage gap, not a confirmed bug — see docs/BUGS.md for the bug-vs-coverage-gap distinction and for actual known bugs (BUG-N)_
 
 Legend: `[covered]` = dedicated test file, `[partial]` = some paths tested, `[none]` = no test.
 

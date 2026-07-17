@@ -48,6 +48,7 @@ class Installer
         'docs/BUGS.md',
         'docs/BUGS_ARCHIVE.md',
         'docs/CODE_PATTERNS.md',
+        'docs/COMMANDS.md',
         'docs/COMPLIANCE.md',
         'docs/DESIGN.md',
         'docs/DOCKER.md',

@@ -96,6 +96,12 @@ The result: sessions start faster because the AI isn't loading irrelevant contex
 
 ---
 
+## Upgrading an existing MAP install
+
+For a brand-new project, letting `install.sh` / `Installer::install()` copy the full template is correct — there's nothing to lose. For a project that's had MAP running for a while, its `AGENTS.md` and other `SCAFFOLD_FILES` likely carry project-specific additions the template doesn't know about — extra Hard rules, custom Load rules for project-specific docs, and so on.
+
+Never regenerate an existing project's `AGENTS.md` (or any other `SCAFFOLD_FILES` entry) wholesale from a newer template — that clobbers real customization. Diff the new template's changed sections against the project's current file and merge in only what's new or changed, preserving anything project-specific. `MANAGED_FILES` (`.claude/rules/*.md`, `.github/copilot-instructions.md`, `.cursor/rules/agents.mdc`, and the `*.example.md` templates) are the exception — those are meant to always match the template exactly, and `install.sh` / `Installer::install()` already overwrite them automatically on every run. `.claude/skills/example-skill/SKILL.md` is a `SCAFFOLD_FILES` entry, not `MANAGED_FILES` — it's a starting point developers customize in place, so it's protected the same way `AGENTS.md` is.
+
 ## What gets installed
 
 ```
@@ -114,6 +120,7 @@ docs/BUGS_ARCHIVE.md               — fixed bugs (append-only)
 docs/ARCHITECTURE.md               — current system structure (AI-maintained)
 docs/ARCHITECTURE_HISTORY.md       — decision log (append-only)
 docs/CODE_PATTERNS.md              — project-specific patterns (AI-maintained)
+docs/COMMANDS.md                   — custom project commands, categorized (AI-maintained)
 docs/FEATURE_FLAGS.md              — feature flag registry (AI-maintained)
 docs/SCHEMA.md                     — database schema and contracts (AI-maintained)
 docs/COMPLIANCE.md                 — regulatory/compliance obligations (human-maintained)
@@ -146,6 +153,10 @@ docs/qa/qa.example.md              — template for a completed feature's QA not
 `docs/agents/`, `docs/api/`, `docs/integrations/`, and `docs/architecture/` can hold many files — one per agent, endpoint, integration, or component. Each one starts with plain YAML frontmatter (`name` + `description`), the same progressive-disclosure idea behind Claude Code's `SKILL.md` files: scan the cheap part across every file in the folder to find the one that matches, then load only that file's full body. It's plain YAML in a markdown file, so every MAP-supported tool can use or ignore it — this is a MAP-internal convention for keeping "load when relevant" cheap at scale, not a claim of compatibility with Claude Code's native Skill discovery, which is a separate mechanism scoped to `.claude/skills/`.
 
 For that native mechanism, MAP ships `.claude/skills/example-skill/SKILL.md` — a starting point for Claude-Code-specific, invocable skills (as opposed to the passive context docs above). Copy the folder, rename it, and Claude Code auto-discovers it; nothing in `AGENTS.md` needs to change. It's Claude-Code-only, so it lives under `.claude/` alongside `.claude/rules/` rather than in the tool-agnostic `docs/` tree.
+
+### Hub-and-spoke: one recurring shape
+
+A few places in MAP converge on the same shape independently: a hub file holds an index or quick-reference and owns the maintenance contract, while companion files hold the depth. `docs/COMMANDS.md`'s quick-index table points at per-command detail below it; `docs/ARCHITECTURE.md`'s Component docs table points into `docs/architecture/[name].md`; `docs/integrations/[service].md` is guided to split into `[service]-[topic].md` companions once a single file passes ~150 lines or covers multiple distinct concerns. It isn't a distinct file type MAP defines — it's a convention worth recognizing when a single doc starts doing too much: split it, keep one file as the index, and note in that index that it and its companions must be kept current together.
 
 ---
 

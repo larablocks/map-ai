@@ -4,6 +4,8 @@ Framework-agnostic core for the **MAP** documentation scaffold. Contains the stu
 
 ## What is MAP?
 
+MAP stands for **Markdown for AI Processing** — a structured Markdown convention designed to make project content predictable, chunkable, and easily consumable by AI systems (LLMs, embeddings, agents).
+
 MAP is a structured set of markdown files that AI coding agents read at session start. It gives every session — with any tool — a reliable starting point: what the project is, how to run it, what's been decided and why, where to pick up from last time, and accumulated knowledge about what doesn't work.
 
 Without it, each AI session starts from zero. With it, sessions start informed.
@@ -96,6 +98,49 @@ The result: sessions start faster because the AI isn't loading irrelevant contex
 
 ---
 
+## Installation
+
+MAP installs via [Composer](https://getcomposer.org), the standard dependency manager for PHP — it isn't Laravel-specific, it's used across the PHP ecosystem (Laravel, Symfony, WordPress, Drupal, Slim, plain PHP). This package requires **PHP 8.2+** and has no other dependencies, so it can be required into any Composer-managed PHP project regardless of framework.
+
+This repo (`larablocks/map-ai`) is the framework-agnostic core: the stub files and the `Installer` class. It's a dependency, not something most projects require directly — install it through a framework package that wraps it in a one-command install experience.
+
+### Laravel
+
+```bash
+composer require larablocks/map-ai-laravel
+php artisan map:install
+```
+
+`map:install` copies the scaffold into your project root (see [What gets installed](#what-gets-installed) below) and merges the required entries into `.gitignore`/`.gitattributes`. Files that already exist are left alone unless you pass `--force`, which overwrites `SCAFFOLD_FILES` after backing each one up to `<file>.bak`.
+
+```bash
+php artisan map:install --force
+```
+
+### Any other PHP project
+
+No framework-specific wrapper exists yet outside Laravel. Require this package directly and run the installer script that ships with it:
+
+```bash
+composer require larablocks/map-ai
+bash vendor/larablocks/map-ai/install.sh /path/to/your/project
+```
+
+Add `--force` to the end of that command to overwrite existing `SCAFFOLD_FILES` (backed up to `<file>.bak` first). `bash` is used explicitly rather than `./install.sh` because Composer-installed vendor files aren't guaranteed to keep their executable bit.
+
+Prefer to drive it from PHP instead of the shell? Call the `Installer` class directly — see [For package authors](#for-package-authors) below for the exact API.
+
+### After installing
+
+1. Review `AGENTS.md` — fill in any remaining `[...]` placeholders (project name, stack, commands) that couldn't be auto-detected.
+2. Each developer runs the `cp` commands in `docs/SETUP.md` step 3 to initialize their own gitignored `docs/memory/*.md` files.
+
+### Want a wrapper for another framework?
+
+Build a thin package the same way `map-ai-laravel` does — require this core package and call `Installer::install()` (or shell out to `install.sh`) from your framework's own install command. See [For package authors](#for-package-authors).
+
+---
+
 ## Upgrading an existing MAP install
 
 For a brand-new project, letting `install.sh` / `Installer::install()` copy the full template is correct — there's nothing to lose. For a project that's had MAP running for a while, its `AGENTS.md` and other `SCAFFOLD_FILES` likely carry project-specific additions the template doesn't know about — extra Hard rules, custom Load rules for project-specific docs, and so on.
@@ -159,14 +204,6 @@ For that native mechanism, MAP ships `.claude/skills/example-skill/SKILL.md` —
 A few places in MAP converge on the same shape independently: a hub file holds an index or quick-reference and owns the maintenance contract, while companion files hold the depth. `docs/COMMANDS.md`'s quick-index table points at per-command detail below it; `docs/ARCHITECTURE.md`'s Component docs table points into `docs/architecture/[name].md`; `docs/integrations/[service].md` is guided to split into `[service]-[topic].md` companions once a single file passes ~150 lines or covers multiple distinct concerns. It isn't a distinct file type MAP defines — it's a convention worth recognizing when a single doc starts doing too much: split it, keep one file as the index, and note in that index that it and its companions must be kept current together.
 
 ---
-
-## Framework packages
-
-Install MAP via your framework's package — this core package is a dependency, not meant to be required directly:
-
-| Framework | Package |
-|-----------|---------|
-| Laravel | [`larablocks/map-ai-laravel`](https://github.com/larablocks/map-ai-laravel) |
 
 ## For package authors
 

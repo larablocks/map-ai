@@ -36,7 +36,7 @@ Both files carry `BUG-N` IDs and ship with `merge=union` set in `.gitattributes`
 
 ### Compliance obligations are project-specific, not generic
 
-`docs/COMPLIANCE.md` documents this project's actual regulatory obligations — data classification, retention, audit requirements, whatever frameworks apply (GDPR, HIPAA, SOC2…). It's loaded whenever the AI touches sensitive data, exports, deletions, or third-party integrations, and changes there require explicit confirmation before proceeding. This is distinct from `.claude/rules/security.md`, which only covers generic secret hygiene.
+`docs/COMPLIANCE.md` documents this project's actual regulatory obligations — data classification, retention, audit requirements, whatever frameworks apply (GDPR, HIPAA, SOC2…). It's loaded whenever the AI touches sensitive data, exports, deletions, or third-party integrations, and such actions require explicit confirmation before proceeding. Editing the file itself is a separate, similarly gated action — Claude may propose changes but never writes them without developer approval, and some changes need more than a verbal yes (see the file's own "Constraints on AI-assisted changes" section). This is distinct from `.claude/rules/security.md`, which only covers generic secret hygiene.
 
 ### Leadership gets a numbers trend, not just a snapshot
 
@@ -100,7 +100,7 @@ The result: sessions start faster because the AI isn't loading irrelevant contex
 
 For a brand-new project, letting `install.sh` / `Installer::install()` copy the full template is correct — there's nothing to lose. For a project that's had MAP running for a while, its `AGENTS.md` and other `SCAFFOLD_FILES` likely carry project-specific additions the template doesn't know about — extra Hard rules, custom Load rules for project-specific docs, and so on.
 
-Never regenerate an existing project's `AGENTS.md` (or any other `SCAFFOLD_FILES` entry) wholesale from a newer template — that clobbers real customization. Diff the new template's changed sections against the project's current file and merge in only what's new or changed, preserving anything project-specific. `MANAGED_FILES` (`.claude/rules/*.md`, `.github/copilot-instructions.md`, `.cursor/rules/agents.mdc`, and the `*.example.md` templates) are the exception — those are meant to always match the template exactly, and `install.sh` / `Installer::install()` already overwrite them automatically on every run. `.claude/skills/example-skill/SKILL.md` is a `SCAFFOLD_FILES` entry, not `MANAGED_FILES` — it's a starting point developers customize in place, so it's protected the same way `AGENTS.md` is.
+Never regenerate an existing project's `AGENTS.md` (or any other `SCAFFOLD_FILES` entry) wholesale from a newer template — that clobbers real customization. Diff the new template's changed sections against the project's current file and merge in only what's new or changed, preserving anything project-specific. `MANAGED_FILES` (`.cursor/rules/agents.mdc` and the `*.example.md` templates) are the exception — those are meant to always match the template exactly, and `install.sh` / `Installer::install()` already overwrite them automatically on every run (though only when content actually differs — an identical file is left untouched). `.claude/rules/security.md`, `.claude/rules/testing.md`, `.github/copilot-instructions.md`, and `.claude/skills/example-skill/SKILL.md` are all `SCAFFOLD_FILES`, not `MANAGED_FILES` — each is a starting point developers customize in place (coverage thresholds, security rules, project-specific commands), so all are protected the same way `AGENTS.md` is.
 
 ## What gets installed
 
@@ -123,11 +123,11 @@ docs/CODE_PATTERNS.md              — project-specific patterns (AI-maintained)
 docs/COMMANDS.md                   — custom project commands, categorized (AI-maintained)
 docs/FEATURE_FLAGS.md              — feature flag registry (AI-maintained)
 docs/SCHEMA.md                     — database schema and contracts (AI-maintained)
-docs/COMPLIANCE.md                 — regulatory/compliance obligations (human-maintained)
-docs/DESIGN.md                     — UI/frontend conventions (optional — delete if no UI layer)
+docs/COMPLIANCE.md                 — regulatory/compliance obligations (Claude proposes, developer approves)
+docs/DESIGN.md                     — UI/frontend conventions (Claude proposes, developer approves; optional — delete if no UI layer)
 docs/GLOSSARY.md                   — domain terms and abbreviations (AI-maintained)
-docs/DOCKER.md                     — container reference
-docs/SETUP.md                      — local dev setup for new developers
+docs/DOCKER.md                     — container reference (Claude proposes, developer approves)
+docs/SETUP.md                      — local dev setup for new developers (Claude proposes, developer approves)
 docs/TESTING_COVERAGE.md           — coverage tracking (AI-maintained from output)
 docs/METRICS_HISTORY.md            — dated metrics log for leadership (AI-maintained, append-only)
 
@@ -182,7 +182,7 @@ $result = (new Installer)->install(
 );
 ```
 
-`$result` contains a `files` array with per-file `action` (`copy`, `update`, `skip`, `missing`) and `backed_up` (true when an existing file was backed up to `<file>.bak` before overwriting), plus `gitignore` and `gitattributes` keys (each `updated` or `skipped`).
+`$result` contains a `files` array with per-file `action` (`copy`, `update`, `skip`, `identical`, `missing`, or `symlink` — the last when the destination is a symlink, which is never written through) and `backed_up` (true when an existing file was backed up to `<file>.bak` before overwriting — note this backup is single-generation: a second forced overwrite replaces `<file>.bak` with the file's already-once-overwritten content, so it isn't a full history), plus `gitignore` and `gitattributes` keys (each `updated` or `skipped`).
 
 ## Development
 

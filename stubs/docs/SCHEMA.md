@@ -27,4 +27,3 @@ a process boundary within your own system, not external APIs.]
 [External API documentation goes in docs/api/ instead.]
 
 ---
-<!-- Claude adds new table summaries in the Tables section above, following the format shown -->

@@ -1,5 +1,5 @@
 # COMMANDS.md
-_Custom project commands — Claude-maintained, appended immediately when a new command is added_
+_Custom project commands — Claude-maintained, updated immediately when a command is added, changed, or removed (not append-only, unlike BUGS_ARCHIVE.md/ARCHITECTURE_HISTORY.md)_
 _Distinct from AGENTS.md's Commands section (test/build/start) — this is the long tail of one-off and category-specific scripts_
 _Last updated: YYYY-MM-DD_
 

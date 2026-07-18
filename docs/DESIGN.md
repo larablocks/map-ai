@@ -3,9 +3,8 @@ name: "[Project Name] Design System"
 ---
 
 # DESIGN.md
-_UI/frontend design conventions — human-authored, Claude proposes changes for developer approval_
+_UI/frontend design conventions — human-authored; Claude may propose edits, but never writes them without developer approval_
 _Optional — delete this file if the project has no UI layer_
-_Human approves all changes — Claude proposes, does not write directly. If a component contradicts this file, this file wins unless the developer explicitly overrides._
 _Last updated: YYYY-MM-DD_
 
 _YAML frontmatter follows the `@google/design.md` DESIGN.md spec (alpha) — keep it lintable with `npx @google/design.md lint`. Only `name` is required to keep the file valid; every other top-level key (`colors`, `typography`, `rounded`, `spacing`, `components`) is optional and should stay absent until the project actually defines it — a placeholder color/font value fails the linter's CSS validation and an unfilled placeholder Claude can't distinguish from an intentional one is worse than a missing key. Once `colors` is added, include a `primary` role and at least one `typography` entry — the linter warns on those specifically._

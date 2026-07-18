@@ -24,7 +24,7 @@ _Remove rows that don't apply. Add rows for additional suites (e2e, contract, et
 **Suite:** [N] tests passing, 0 failing ([duration with coverage]).
 **Overall coverage:** 0% ([PCOV / Xdebug], measured [YYYY-MM-DD]).
 
-> Re-run `[coverage command]` whenever a tracked file's coverage moves materially (≥ 2 percentage points or crosses a 100% boundary). Update the % column in the same change — stale numbers send the next engineer chasing gaps that don't exist.
+> Re-run `[coverage command]` and update the % column whenever a tracked file's coverage moves ≥2 points or crosses a 100% boundary.
 
 ## How to run
 

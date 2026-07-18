@@ -1,6 +1,5 @@
 # SETUP.md
-_Local development setup — human-authored, Claude proposes changes for developer approval_
-_Human approves all changes — Claude proposes, does not write directly._
+_Local development setup — human-authored; Claude may propose edits, but never writes them without developer approval_
 _Last updated: YYYY-MM-DD_
 
 ## Prerequisites
@@ -33,7 +32,6 @@ cp docs/memory/performance.example.md docs/memory/performance.md
 cp docs/memory/agents.example.md docs/memory/agents.md  # skip if no agent pipeline
 
 # 3b. Initialize shared team files (committed to repo — not gitignored)
-# shared.md is also self-created by AGENTS.md on first session if missing.
 cp docs/memory/shared.example.md docs/memory/shared.md
 
 # 4. Install dependencies

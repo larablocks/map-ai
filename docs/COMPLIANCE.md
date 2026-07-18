@@ -1,7 +1,6 @@
 # COMPLIANCE.md
-_Project-specific regulatory and compliance obligations — human-authored, Claude proposes changes for developer approval_
+_Project-specific regulatory and compliance obligations — human-authored; Claude may propose edits, but never writes them without developer approval_
 _Distinct from .claude/rules/security.md — that file covers generic secret hygiene; this file covers this project's actual regulatory obligations_
-_Human approves all changes — Claude proposes, does not write directly._
 _Last updated: YYYY-MM-DD_
 
 ## Applicable frameworks

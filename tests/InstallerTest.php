@@ -120,6 +120,20 @@ it('does not duplicate gitignore entries on re-install', function () {
     expect(substr_count($gitignore, '.claude/settings.local.json'))->toBe(1);
 });
 
+it('appends only the missing gitignore group when another group is already present', function () {
+    $partial = "docs/MEMORY.md\n";
+    file_put_contents($this->tempDir.'/.gitignore', $partial);
+
+    $result = $this->installer->install($this->stubsPath, $this->tempDir);
+
+    $gitignore = file_get_contents($this->tempDir.'/.gitignore');
+    expect(substr_count($gitignore, 'docs/MEMORY.md'))->toBe(1);
+    expect($gitignore)->toContain('.claude/settings.local.json');
+    expect($gitignore)->toContain('CLAUDE.local.md');
+    expect($gitignore)->toContain('docs/memory/*.md');
+    expect($result['gitignore'])->toBe('updated');
+});
+
 it('returns updated for a new gitignore', function () {
     $result = $this->installer->install($this->stubsPath, $this->tempDir);
     expect($result['gitignore'])->toBe('updated');
@@ -252,7 +266,7 @@ it('excludes scaffold files that do not exist in the project', function () {
 });
 
 it('updates managed files without force', function () {
-    $rulesPath = $this->tempDir.'/.claude/rules/security.md';
+    $rulesPath = $this->tempDir.'/.cursor/rules/agents.mdc';
     mkdir(dirname($rulesPath), 0755, true);
     file_put_contents($rulesPath, 'old content');
 
@@ -262,26 +276,74 @@ it('updates managed files without force', function () {
 });
 
 it('reports update action for changed managed files without force', function () {
-    mkdir($this->tempDir.'/.claude/rules', 0755, true);
-    file_put_contents($this->tempDir.'/.claude/rules/security.md', 'old content');
+    mkdir($this->tempDir.'/.cursor/rules', 0755, true);
+    file_put_contents($this->tempDir.'/.cursor/rules/agents.mdc', 'old content');
 
     $result = $this->installer->install($this->stubsPath, $this->tempDir);
 
-    $entry = array_values(array_filter($result['files'], fn ($f) => $f['file'] === '.claude/rules/security.md'))[0];
+    $entry = array_values(array_filter($result['files'], fn ($f) => $f['file'] === '.cursor/rules/agents.mdc'))[0];
     expect($entry['action'])->toBe('update');
     expect($entry['backed_up'])->toBeFalse();
-    expect($this->tempDir.'/.claude/rules/security.md.bak')->not->toBeFile();
+    expect($this->tempDir.'/.cursor/rules/agents.mdc.bak')->not->toBeFile();
 });
 
 it('reports identical for managed files with unchanged content', function () {
-    $stubContent = file_get_contents($this->stubsPath.'/.claude/rules/security.md');
-    mkdir($this->tempDir.'/.claude/rules', 0755, true);
-    file_put_contents($this->tempDir.'/.claude/rules/security.md', $stubContent);
+    $stubContent = file_get_contents($this->stubsPath.'/.cursor/rules/agents.mdc');
+    mkdir($this->tempDir.'/.cursor/rules', 0755, true);
+    file_put_contents($this->tempDir.'/.cursor/rules/agents.mdc', $stubContent);
 
     $result = $this->installer->install($this->stubsPath, $this->tempDir);
 
-    $entry = array_values(array_filter($result['files'], fn ($f) => $f['file'] === '.claude/rules/security.md'))[0];
+    $entry = array_values(array_filter($result['files'], fn ($f) => $f['file'] === '.cursor/rules/agents.mdc'))[0];
     expect($entry['action'])->toBe('identical');
+});
+
+it('backs up security.md, testing.md, and copilot-instructions.md as scaffold files on force-overwrite', function () {
+    $paths = [
+        '.claude/rules/security.md',
+        '.claude/rules/testing.md',
+        '.github/copilot-instructions.md',
+    ];
+    foreach ($paths as $path) {
+        $fullPath = $this->tempDir.'/'.$path;
+        if (! is_dir(dirname($fullPath))) {
+            mkdir(dirname($fullPath), 0755, true);
+        }
+        file_put_contents($fullPath, 'customized content');
+    }
+
+    $result = $this->installer->install($this->stubsPath, $this->tempDir, force: true);
+
+    foreach ($paths as $path) {
+        $entry = array_values(array_filter($result['files'], fn ($f) => $f['file'] === $path))[0];
+        expect($entry['action'])->toBe('update');
+        expect($entry['backed_up'])->toBeTrue();
+        expect($this->tempDir.'/'.$path.'.bak')->toBeFile();
+        expect(file_get_contents($this->tempDir.'/'.$path.'.bak'))->toBe('customized content');
+    }
+});
+
+it('skips security.md, testing.md, and copilot-instructions.md without force', function () {
+    $paths = [
+        '.claude/rules/security.md',
+        '.claude/rules/testing.md',
+        '.github/copilot-instructions.md',
+    ];
+    foreach ($paths as $path) {
+        $fullPath = $this->tempDir.'/'.$path;
+        if (! is_dir(dirname($fullPath))) {
+            mkdir(dirname($fullPath), 0755, true);
+        }
+        file_put_contents($fullPath, 'customized content');
+    }
+
+    $result = $this->installer->install($this->stubsPath, $this->tempDir);
+
+    foreach ($paths as $path) {
+        $entry = array_values(array_filter($result['files'], fn ($f) => $f['file'] === $path))[0];
+        expect($entry['action'])->toBe('skip');
+        expect(file_get_contents($this->tempDir.'/'.$path))->toBe('customized content');
+    }
 });
 
 it('skips scaffold files without force', function () {
@@ -307,4 +369,68 @@ it('root template files match stubs', function () {
             $normalize((string) file_get_contents($stubFile)),
         );
     }
+});
+
+it('excludes framework.example.md from PERSONAL_FILES since it needs a project-specific rename', function () {
+    expect(Installer::PERSONAL_FILES)->not->toHaveKey('docs/memory/framework.example.md');
+});
+
+it('bootstraps personal files by copying each example when the personal file is missing', function () {
+    $this->installer->install($this->stubsPath, $this->tempDir);
+
+    $results = $this->installer->bootstrapPersonalFiles($this->tempDir);
+
+    $actions = array_column($results, 'action');
+    expect($actions)->each->toBe('copy');
+    foreach (Installer::PERSONAL_FILES as $personal) {
+        expect($this->tempDir.'/'.$personal)->toBeFile();
+    }
+});
+
+it('skips bootstrapping a personal file that already exists', function () {
+    $this->installer->install($this->stubsPath, $this->tempDir);
+    file_put_contents($this->tempDir.'/docs/memory/gotchas.md', 'existing personal notes');
+
+    $results = $this->installer->bootstrapPersonalFiles($this->tempDir);
+
+    $entry = array_values(array_filter($results, fn ($r) => $r['file'] === 'docs/memory/gotchas.md'))[0];
+    expect($entry['action'])->toBe('skip');
+    expect(file_get_contents($this->tempDir.'/docs/memory/gotchas.md'))->toBe('existing personal notes');
+});
+
+it('reports missing when bootstrapping before the example files are installed', function () {
+    $results = $this->installer->bootstrapPersonalFiles($this->tempDir);
+
+    $actions = array_column($results, 'action');
+    expect($actions)->each->toBe('missing');
+});
+
+it('keeps install.sh MANAGED_FILES and SCAFFOLD_FILES in sync with Installer.php', function () {
+    $installShPath = dirname(Installer::stubsPath()).'/install.sh';
+    $installSh = file_get_contents($installShPath);
+
+    $extractArray = function (string $name) use ($installSh): array {
+        preg_match('/^'.$name.'=\((.*?)^\)/ms', $installSh, $matches);
+
+        return array_values(array_filter(array_map('trim', explode("\n", $matches[1] ?? ''))));
+    };
+
+    expect($extractArray('MANAGED_FILES'))->toBe(Installer::MANAGED_FILES);
+    expect($extractArray('SCAFFOLD_FILES'))->toBe(Installer::SCAFFOLD_FILES);
+});
+
+it('never writes through a symlinked destination, even with force', function () {
+    $outside = sys_get_temp_dir().'/map-ai-symlink-target-'.uniqid();
+    file_put_contents($outside, 'precious data outside the target directory');
+    symlink($outside, $this->tempDir.'/AGENTS.md');
+
+    $result = $this->installer->install($this->stubsPath, $this->tempDir, force: true);
+
+    $entry = array_values(array_filter($result['files'], fn ($f) => $f['file'] === 'AGENTS.md'))[0];
+    expect($entry['action'])->toBe('symlink');
+    expect($entry['backed_up'])->toBeFalse();
+    expect(file_get_contents($outside))->toBe('precious data outside the target directory');
+    expect(is_link($this->tempDir.'/AGENTS.md'))->toBeTrue();
+
+    unlink($outside);
 });

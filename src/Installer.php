@@ -4,10 +4,16 @@ namespace larablocks\MapAi;
 
 class Installer
 {
+    /**
+     * framework.example.md is deliberately excluded — it needs a project-specific rename
+     * (e.g. laravel.md) this generic example→personal mapping can't determine, and a
+     * literal framework.md would sit unread since AGENTS.md's Load rule and docs/MEMORY.md's
+     * summary table both expect the renamed file. docs/SETUP.md documents the manual rename
+     * command, and AGENTS.md's session-start ritual self-creates it correctly on first need.
+     */
     public const PERSONAL_FILES = [
         'docs/MEMORY.example.md'                => 'docs/MEMORY.md',
         'docs/memory/gotchas.example.md'        => 'docs/memory/gotchas.md',
-        'docs/memory/framework.example.md'      => 'docs/memory/framework.md',
         'docs/memory/database.example.md'       => 'docs/memory/database.md',
         'docs/memory/testing.example.md'        => 'docs/memory/testing.md',
         'docs/memory/environment.example.md'    => 'docs/memory/environment.md',
@@ -17,9 +23,6 @@ class Installer
 
     /** Framework-owned files — always kept in sync with the package stubs, never backed up. */
     public const MANAGED_FILES = [
-        '.claude/rules/security.md',
-        '.claude/rules/testing.md',
-        '.github/copilot-instructions.md',
         '.cursor/rules/agents.mdc',
         'docs/MEMORY.example.md',
         'docs/agents/agent.example.md',
@@ -37,12 +40,21 @@ class Installer
         'docs/memory/testing.example.md',
     ];
 
-    /** User-owned scaffold files — copied once on install, never overwritten without --force. */
+    /**
+     * User-owned scaffold files — copied once on install, never overwritten without --force.
+     * This governs install-time file safety only. AGENTS.md, CLAUDE.md, GEMINI.md, and
+     * .claude/rules/*.md carry an additional, separate restriction: AGENTS.md's own Hard
+     * rule requires explicit developer instruction before Claude edits them directly,
+     * regardless of this installer's SCAFFOLD/MANAGED categorization.
+     */
     public const SCAFFOLD_FILES = [
         'AGENTS.md',
         'CLAUDE.md',
         'GEMINI.md',
+        '.claude/rules/security.md',
+        '.claude/rules/testing.md',
         '.claude/skills/example-skill/SKILL.md',
+        '.github/copilot-instructions.md',
         'docs/ARCHITECTURE.md',
         'docs/ARCHITECTURE_HISTORY.md',
         'docs/BUGS.md',
@@ -61,27 +73,26 @@ class Installer
         'docs/TESTING_COVERAGE.md',
     ];
 
-    private const GITIGNORE_BLOCK = <<<'BLOCK'
-
-# MAP — developer-specific files (do not commit)
-.claude/settings.local.json
-
-# Claude personal local rules — developer specific, not shared
-CLAUDE.local.md
-
-# Claude auto-memory — session/machine specific
-# Copy *.example.md files to their non-example versions on first clone
-docs/MEMORY.md
-docs/memory/*.md
-!docs/memory/*.example.md
-!docs/memory/shared.md
-BLOCK;
-
-    private const GITIGNORE_SENTINELS = [
-        '.claude/settings.local.json',
-        'CLAUDE.local.md',
-        'docs/MEMORY.md',
-        'docs/memory/*.md',
+    /**
+     * Grouped so a partially-present group only gets its missing lines appended (no
+     * duplicate header, no duplicate already-present lines) while a fully-missing group
+     * gets its header re-emitted — mirrors install.sh's equivalent grouping exactly.
+     *
+     * @var list<array{header: string, entries: list<string>}>
+     */
+    private const GITIGNORE_GROUPS = [
+        [
+            'header' => '# MAP — developer-specific files (do not commit)',
+            'entries' => ['.claude/settings.local.json'],
+        ],
+        [
+            'header' => '# Claude personal local rules — developer specific, not shared',
+            'entries' => ['CLAUDE.local.md'],
+        ],
+        [
+            'header' => "# Claude auto-memory — session/machine specific\n# Copy *.example.md files to their non-example versions on first clone",
+            'entries' => ['docs/MEMORY.md', 'docs/memory/*.md', '!docs/memory/*.example.md', '!docs/memory/shared.md'],
+        ],
     ];
 
     /**
@@ -121,9 +132,9 @@ BLOCK;
     }
 
     /**
-     * @param callable(array{action: 'copy'|'update'|'skip'|'identical'|'missing', file: string, backed_up: bool}): void|null $progress
+     * @param callable(array{action: 'copy'|'update'|'skip'|'identical'|'missing'|'symlink', file: string, backed_up: bool}): void|null $progress
      * @return array{
-     *     files: list<array{action: 'copy'|'update'|'skip'|'identical'|'missing', file: string, backed_up: bool}>,
+     *     files: list<array{action: 'copy'|'update'|'skip'|'identical'|'missing'|'symlink', file: string, backed_up: bool}>,
      *     gitignore: 'updated'|'skipped',
      *     gitattributes: 'updated'|'skipped'
      * }
@@ -185,7 +196,7 @@ BLOCK;
         return $results;
     }
 
-    /** @return array{action: 'copy'|'update'|'skip'|'identical'|'missing', file: string, backed_up: bool} */
+    /** @return array{action: 'copy'|'update'|'skip'|'identical'|'missing'|'symlink', file: string, backed_up: bool} */
     private function copyFile(string $stubsPath, string $targetPath, string $file, bool $force, bool $backup = true): array
     {
         $src = $stubsPath.'/'.$file;
@@ -193,6 +204,12 @@ BLOCK;
 
         if (! file_exists($src)) {
             return ['action' => 'missing', 'file' => $file, 'backed_up' => false];
+        }
+
+        // Never write through a symlink at the destination — copy()/file_put_contents()
+        // follow it, which could silently write outside the target directory entirely.
+        if (is_link($dst)) {
+            return ['action' => 'symlink', 'file' => $file, 'backed_up' => false];
         }
 
         if (file_exists($dst) && ! $force) {
@@ -227,15 +244,26 @@ BLOCK;
         $existing = file_exists($gitignorePath) ? (file_get_contents($gitignorePath) ?: '') : '';
         $existingLines = $existing !== '' ? array_map('trim', explode("\n", $existing)) : [];
 
-        foreach (self::GITIGNORE_SENTINELS as $sentinel) {
-            if (! in_array($sentinel, $existingLines, true)) {
-                file_put_contents($gitignorePath, $existing.self::GITIGNORE_BLOCK."\n");
+        $additions = [];
+        foreach (self::GITIGNORE_GROUPS as $group) {
+            $missing = array_values(array_diff($group['entries'], $existingLines));
 
-                return 'updated';
+            if ($missing === []) {
+                continue;
             }
+
+            $additions[] = $missing === $group['entries']
+                ? $group['header']."\n".implode("\n", $group['entries'])
+                : implode("\n", $missing);
         }
 
-        return 'skipped';
+        if ($additions === []) {
+            return 'skipped';
+        }
+
+        file_put_contents($gitignorePath, $existing."\n".implode("\n\n", $additions)."\n");
+
+        return 'updated';
     }
 
     /** @return 'skipped'|'updated' */

@@ -34,5 +34,5 @@ _Implemented but not yet verified live — distinct from docs/BUGS.md (confirmed
 [Behaviour and what would confirm it]
 
 ## Legacy / dormant surfaces
-_Confirmed-dead-but-not-deleted code paths — distinct from docs/COMMANDS.md's breadcrumb (which notes when something was added and when it may be removed); this instead records what's already confirmed dead and why it's being kept rather than deleted_
+_Confirmed-dead-but-not-deleted code paths — distinct from docs/COMMANDS.md's breadcrumb (which notes when something was added and when it may be removed); this instead records what's already confirmed dead_
 [e.g. "no active callers found as of YYYY-MM-DD" or "0% coverage, deferred" — name the file/function and why it's being kept rather than deleted]

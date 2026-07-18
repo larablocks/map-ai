@@ -2,7 +2,7 @@
 _Known bugs — updated by Claude on discovery or after test failures_
 _Claude writes immediately on discovery — do not wait for session end_
 _Fixed and verified bugs move to docs/BUGS_ARCHIVE.md immediately — one at a time, never batched_
-_Each open bug is locked in as a skipped test citing its BUG-N; the test flips from skipped to passing when the fix lands — see docs/TESTING_COVERAGE.md_
+_Each open bug is locked in as a skipped test citing its BUG-N; the test flips from skipped to passing when the fix lands (see the Test/Covered by fields below)_
 _Distinct from a coverage gap (docs/TESTING_COVERAGE.md `[none]`/`[partial]` rows): a BUG-N is a confirmed defect with known-wrong behaviour, a coverage gap is just untested code that may or may not be correct_
 
 <!-- Severity: blocking=no further work | high=no workaround | medium=workaround exists | low=minor -->
@@ -18,7 +18,7 @@ _Distinct from a coverage gap (docs/TESTING_COVERAGE.md `[none]`/`[partial]` row
      recount from history. -->
 
 ## Open bugs
-<!-- BUG-N: scan BOTH this file and docs/BUGS_ARCHIVE.md for the highest existing number and increment by 1 — numbers are permanent, never reused, and the skipped test for each bug cites its ID -->
+<!-- BUG-N: if a dated "### Numbering note" entry exists below, use the number it states as the next available and skip the recount; otherwise scan BOTH this file and docs/BUGS_ARCHIVE.md for the highest existing number and increment by 1 — numbers are permanent, never reused -->
 <!-- Format:
 ### BUG-[N] — [Short title] (Verified. / Agent-reported.)
 - **Discovered:** YYYY-MM-DD via [test failure / code review / runtime]

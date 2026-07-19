@@ -147,6 +147,36 @@ For a brand-new project, letting `install.sh` / `Installer::install()` copy the 
 
 Never regenerate an existing project's `AGENTS.md` (or any other `SCAFFOLD_FILES` entry) wholesale from a newer template — that clobbers real customization. Diff the new template's changed sections against the project's current file and merge in only what's new or changed, preserving anything project-specific. `MANAGED_FILES` (`.cursor/rules/agents.mdc` and the `*.example.md` templates) are the exception — those are meant to always match the template exactly, and `install.sh` / `Installer::install()` already overwrite them automatically on every run (though only when content actually differs — an identical file is left untouched). `.claude/rules/security.md`, `.claude/rules/testing.md`, `.github/copilot-instructions.md`, and `.claude/skills/example-skill/SKILL.md` are all `SCAFFOLD_FILES`, not `MANAGED_FILES` — each is a starting point developers customize in place (coverage thresholds, security rules, project-specific commands), so all are protected the same way `AGENTS.md` is.
 
+### Doctor — checking and repairing drift automatically
+
+The `Doctor` class automates the "what's missing or stale" half of the guidance above, with a hard rule of its own: `fix()` only ever adds content, never removes or rewrites a line a developer could have written.
+
+```php
+use larablocks\MapAi\Doctor;
+use larablocks\MapAi\Installer;
+
+$doctor = new Doctor;
+
+// Report-only — nothing is written. Every finding is tagged fixable: true|false.
+$findings = $doctor->check(Installer::stubsPath(), '/path/to/project');
+
+// Applies only the fixable: true findings from check(). Safe to run unattended
+// or wire into CI — it never touches an existing customized file.
+$applied = $doctor->fix(Installer::stubsPath(), '/path/to/project');
+```
+
+`check()` reports two kinds of findings:
+
+| `fixable` | Finding | What it means |
+|---|---|---|
+| `true` | `missing-file` | A `MANAGED_FILES`/`SCAFFOLD_FILES` entry doesn't exist in the project yet |
+| `true` | `copilot-out-of-sync` (safe case) | `.github/copilot-instructions.md` is stale, but regenerating it from the project's own `AGENTS.md`/`security.md`/`testing.md` would only add or reorder lines already present in those source files |
+| `false` | `outdated-scaffold-file` | A `SCAFFOLD_FILES` entry exists but differs from the current stub — real content, needs a human diff and merge |
+| `false` | `agents-md-too-long` | `AGENTS.md` is over the 100-line cap — which sections to cut is a judgment call |
+| `false` | `copilot-out-of-sync` (unsafe case) | Regenerating `.github/copilot-instructions.md` would drop a line currently in the file — likely a hand edit, or content since removed upstream |
+
+`fix()` applies the `true` rows only: it copies in missing files (via `Installer::install(force: false)`, so existing `SCAFFOLD_FILES` are never touched and only `MANAGED_FILES` re-sync), fills in missing `.gitignore`/`.gitattributes` entries, and regenerates `.github/copilot-instructions.md` — but only when that regeneration is a strict superset of what's already there.
+
 ## What gets installed
 
 ```
@@ -220,6 +250,24 @@ $result = (new Installer)->install(
 ```
 
 `$result` contains a `files` array with per-file `action` (`copy`, `update`, `skip`, `identical`, `missing`, or `symlink` — the last when the destination is a symlink, which is never written through) and `backed_up` (true when an existing file was backed up to `<file>.bak` before overwriting — note this backup is single-generation: a second forced overwrite replaces `<file>.bak` with the file's already-once-overwritten content, so it isn't a full history), plus `gitignore` and `gitattributes` keys (each `updated` or `skipped`).
+
+Two more `Installer` methods round out the API:
+
+```php
+// Copies each PERSONAL_FILES example (e.g. docs/MEMORY.example.md, already placed by
+// install()) to its personal, gitignored counterpart (docs/MEMORY.md) if that file doesn't
+// already exist. map-ai-laravel's map:install command calls this right after install() so
+// each developer's personal memory files get bootstrapped alongside the shared scaffold.
+(new Installer)->bootstrapPersonalFiles(targetPath: '/path/to/project');
+// Returns a list of {action: 'copy'|'skip'|'missing', file: string}.
+
+// Reports which SCAFFOLD_FILES exist in the project but differ from the current stub —
+// useful for a standalone "your docs are behind the template" check without writing
+// anything. (map-ai-laravel's map:diff command currently does its own file-by-file diff
+// rather than calling this, but the check is equivalent.)
+(new Installer)->scaffoldOutOfDate(stubsPath: Installer::stubsPath(), targetPath: '/path/to/project');
+// Returns a list<string> of relative file paths.
+```
 
 ## Development
 

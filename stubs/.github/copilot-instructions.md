@@ -24,7 +24,7 @@ Load CLAUDE.local.md if it exists or equivalent local rules file for your tool �
 - Start services: `[START COMMAND]`
 - Build: `[BUILD COMMAND]`
 
-If any command above still shows a `[...]` placeholder, detect it by reading composer.json, package.json, and Makefile, then replace the placeholder in this file.
+_If any command above still shows a `[...]` placeholder, detect it by reading composer.json, package.json, and Makefile, then replace the placeholder in this file._
 
 ## Load when relevant
 Read docs/ARCHITECTURE.md when working on structure or new features
@@ -76,7 +76,7 @@ _Priority order: BUGS.md first, then ARCHITECTURE_HISTORY.md, then others_
 3. Ask "what did I learn?" — route each learning to docs/memory/ and update MEMORY.md entry counts
 
 ## File routing — when in doubt
-Most routing is already covered by the Write rules above — this is only what isn't
+_Most routing is already covered by the Write rules above — this is only what isn't_
 New agent/API/integration/component docs → scan the target folder's frontmatter for an existing match first, then copy the relevant .example.md and fill in its name/description
 
 ## Ask before acting
@@ -110,7 +110,8 @@ _Copilot does not auto-load .claude/rules/security.md — rules are inlined here
 _Copilot does not auto-load .claude/rules/testing.md — rules are inlined here_
 - IMPORTANT: New code requires tests before marking a task complete
   (exception: first task on a new project may establish the test framework itself)
-- Minimum coverage threshold: 80% (adjust in .claude/rules/testing.md if different) — run coverage and update docs/TESTING_COVERAGE.md after adding tests
+- Minimum coverage threshold: 80% (adjust here if project requires different)
+  Run coverage command and update docs/TESTING_COVERAGE.md after adding tests
 - Critical paths require explicit test coverage regardless of overall percentage
 - Tests must assert behaviour, not implementation details
 - Each test has one clear reason to fail

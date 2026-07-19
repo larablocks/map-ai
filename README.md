@@ -177,6 +177,19 @@ $applied = $doctor->fix(Installer::stubsPath(), '/path/to/project');
 
 `fix()` applies the `true` rows only: it copies in missing files (via `Installer::install(force: false)`, so existing `SCAFFOLD_FILES` are never touched and only `MANAGED_FILES` re-sync), fills in missing `.gitignore`/`.gitattributes` entries, and regenerates `.github/copilot-instructions.md` — but only when that regeneration is a strict superset of what's already there.
 
+### `doctor.sh` — the same checks, no PHP required
+
+`doctor.sh` is a standalone bash port of `Doctor` with identical behavior — same findings, same additive-only `--fix` guarantee, verified byte-for-byte against `Doctor::regenerateCopilotInstructions()` for the `.github/copilot-instructions.md` case. It exists because the MAP convention itself is language-agnostic (it installs into any project via `install.sh`, PHP or not — see [Any other PHP project](#any-other-php-project) above, which works the same way for non-PHP projects too), but the PHP `Doctor` class only helps if PHP happens to be present. `doctor.sh` doesn't have that requirement — it needs nothing but bash, matching `install.sh`'s own zero-runtime-dependency design.
+
+```bash
+./doctor.sh /path/to/project           # report only — exits 1 if anything needs attention
+./doctor.sh /path/to/project --fix     # applies fixable findings, then reports what's left
+```
+
+Report-only mode exits `1` on any finding at all (fixable or not) — CI-friendly, since any drift is worth surfacing. `--fix` mode exits `0` once everything it can apply is applied, `1` only if a review-only finding remains.
+
+`doctor.sh` sources `lib.sh` for the `MANAGED_FILES`/`SCAFFOLD_FILES` lists (the same ones `install.sh` and `Installer.php` use — kept in sync by an automated test), and shells out to `install.sh` internally for the missing-file/gitignore/gitattributes repairs rather than reimplementing that logic a third time.
+
 ## What gets installed
 
 ```

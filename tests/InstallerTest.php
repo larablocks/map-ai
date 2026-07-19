@@ -405,12 +405,12 @@ it('reports missing when bootstrapping before the example files are installed', 
     expect($actions)->each->toBe('missing');
 });
 
-it('keeps install.sh MANAGED_FILES and SCAFFOLD_FILES in sync with Installer.php', function () {
-    $installShPath = dirname(Installer::stubsPath()).'/install.sh';
-    $installSh = file_get_contents($installShPath);
+it('keeps lib.sh MANAGED_FILES and SCAFFOLD_FILES in sync with Installer.php', function () {
+    $libShPath = dirname(Installer::stubsPath()).'/lib.sh';
+    $libSh = file_get_contents($libShPath);
 
-    $extractArray = function (string $name) use ($installSh): array {
-        preg_match('/^'.$name.'=\((.*?)^\)/ms', $installSh, $matches);
+    $extractArray = function (string $name) use ($libSh): array {
+        preg_match('/^'.$name.'=\((.*?)^\)/ms', $libSh, $matches);
 
         return array_values(array_filter(array_map('trim', explode("\n", $matches[1] ?? ''))));
     };

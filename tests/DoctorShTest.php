@@ -363,3 +363,60 @@ it('does not auto-replace a trailing # reference outside a fenced code block', f
 
     shell_exec('rm -rf '.escapeshellarg($syntheticRoot));
 });
+
+it('never replaces a filled-in placeholder with the stub still showing [PLACEHOLDER] — AGENTS.md project/stack/date', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+
+    $agentsPath = $this->tempDir.'/AGENTS.md';
+    file_put_contents(
+        $agentsPath,
+        str_replace(
+            [
+                '_Project: [PROJECT NAME] | Stack: [e.g. Laravel 13, PHP 8.5, PostgreSQL 16, Redis]_',
+                '_MAP v1.0 | Last updated: [DATE]_',
+            ],
+            [
+                '_Project: archer | Stack: Laravel 13, PHP 8.5, MySQL, Redis_',
+                '_MAP v1.0 | Last updated: 2026-06-22_',
+            ],
+            file_get_contents($agentsPath)
+        )
+    );
+
+    $check = runDoctorSh($this->tempDir);
+    expect($check['output'])->toContain('[REVIEW]   outdated-scaffold-file  AGENTS.md');
+    expect($check['output'])->not->toContain('[FIXABLE]  missing-template-updates AGENTS.md');
+
+    runDoctorSh($this->tempDir, fix: true);
+    $content = file_get_contents($agentsPath);
+
+    expect($content)->toContain('_Project: archer | Stack: Laravel 13, PHP 8.5, MySQL, Redis_');
+    expect($content)->not->toContain('[PROJECT NAME]');
+});
+
+it('never replaces a filled-in placeholder with the stub still showing YYYY-MM-DD — docs/STATUS.md, matching Doctor.php', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+
+    $statusPath = $this->tempDir.'/docs/STATUS.md';
+    file_put_contents(
+        $statusPath,
+        str_replace(
+            '_Last updated: YYYY-MM-DD by Claude_',
+            '_Last updated: 2026-07-10 by Claude_',
+            file_get_contents($statusPath)
+        )
+    );
+
+    $phpTarget = $this->tempDir.'-php-copy';
+    shell_exec('cp -r '.escapeshellarg($this->tempDir).' '.escapeshellarg($phpTarget));
+    (new Doctor)->fix($this->mapAiDir.'/stubs', $phpTarget);
+    $phpStatus = file_get_contents($phpTarget.'/docs/STATUS.md');
+
+    runDoctorSh($this->tempDir, fix: true);
+    $bashStatus = file_get_contents($statusPath);
+
+    expect($bashStatus)->toContain('_Last updated: 2026-07-10 by Claude_');
+    expect($bashStatus)->toBe($phpStatus);
+
+    shell_exec('rm -rf '.escapeshellarg($phpTarget));
+});

@@ -183,6 +183,24 @@ is_safe_note_modification() {
   is_html_comment_block "$removed" && is_html_comment_block "$added"
 }
 
+# A note/comment can look purely instructional by shape while actually being a
+# template with a placeholder a project has since filled in with real data — e.g.
+# "_Last updated: YYYY-MM-DD by Claude_" becomes "_Last updated: 2026-07-10 by
+# Claude_". Both are still full-line italic notes, but replacing the second with
+# the first would silently discard a real date. Final guard, applied regardless
+# of which shape check matched: true if $2 (stub/added) names a [bracketed]
+# placeholder or the literal YYYY-MM-DD that doesn't appear verbatim in $1
+# (target/removed) — meaning the target has already filled it in.
+stub_placeholder_was_filled() {
+  local removed_text="$1" added_text="$2"
+  local placeholder
+  while IFS= read -r placeholder; do
+    [[ -z "$placeholder" ]] && continue
+    [[ "$removed_text" == *"$placeholder"* ]] || return 0
+  done < <(grep -oE '\[[^][]*\]|YYYY-MM-DD' <<< "$added_text")
+  return 1
+}
+
 # Prints everything before a whitespace-preceded # to stdout and returns 0, or
 # returns 1 if $1 has no such trailing comment. `#` has no reserved meaning in
 # prose, so callers must scope this to fenced code lines themselves.
@@ -248,7 +266,10 @@ classify_scaffold_diff() {
       if [[ "$old_count" -eq 1 && "$new_count" -eq 1 ]] && is_fenced_line "$old_start"; then
         is_safe_inline_comment_modification "$removed" "$added" && is_inline_comment=0
       fi
-      if is_safe_note_modification "$removed" "$added" || [[ "$is_inline_comment" -eq 0 ]]; then
+      local looks_safe=1
+      is_safe_note_modification "$removed" "$added" && looks_safe=0
+      [[ "$is_inline_comment" -eq 0 ]] && looks_safe=0
+      if [[ "$looks_safe" -eq 0 ]] && ! stub_placeholder_was_filled "$removed" "$added"; then
         SCAFFOLD_HAS_ADDITIONS=1
       else
         SCAFFOLD_HAS_MODIFICATIONS=1
@@ -313,6 +334,9 @@ patch_scaffold_file() {
     is_safe_note_modification "$removed" "$added" && safe=0
     if [[ "$safe" -ne 0 && "$old_count" -eq 1 && "$new_count" -eq 1 ]] && is_fenced_line "$old_start"; then
       is_safe_inline_comment_modification "$removed" "$added" && safe=0
+    fi
+    if [[ "$safe" -eq 0 ]] && stub_placeholder_was_filled "$removed" "$added"; then
+      safe=1
     fi
 
     if [[ "$safe" -eq 0 ]]; then

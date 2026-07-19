@@ -427,7 +427,9 @@ class Doctor
                     && isset($targetFenceLines[$oldStart])
                     && $this->isSafeInlineCommentModification($removed[0], $added[0]);
 
-                if ($this->isSafeNoteModification($removed, $added) || $isInlineCommentHunk) {
+                $looksSafe = $this->isSafeNoteModification($removed, $added) || $isInlineCommentHunk;
+
+                if ($looksSafe && ! $this->stubPlaceholderWasFilled($removed, $added)) {
                     $appliableHunks[] = ['start' => $oldStart - 1, 'count' => $oldCount, 'lines' => $added];
                 } else {
                     $hasModifications = true;
@@ -462,6 +464,37 @@ class Doctor
         }
 
         return $this->isHtmlCommentBlock($removed) && $this->isHtmlCommentBlock($added);
+    }
+
+    /**
+     * A note/comment can look purely instructional by shape while actually being a
+     * template with a placeholder a project has since filled in with real data — e.g.
+     * `_Last updated: YYYY-MM-DD by Claude_` becomes `_Last updated: 2026-07-10 by
+     * Claude_`. Both are still full-line italic notes, but replacing the second with
+     * the first would silently discard a real date. This is the final guard: if the
+     * stub's side names a `[bracketed]` placeholder or the literal `YYYY-MM-DD` that
+     * doesn't appear verbatim on the target's side, the target has filled it in —
+     * never safe to auto-apply regardless of which shape check matched.
+     *
+     * @param  list<string>  $removed
+     * @param  list<string>  $added
+     */
+    private function stubPlaceholderWasFilled(array $removed, array $added): bool
+    {
+        $removedText = implode("\n", $removed);
+        $addedText = implode("\n", $added);
+
+        if (! preg_match_all('/\[[^\[\]]*\]|YYYY-MM-DD/', $addedText, $matches)) {
+            return false;
+        }
+
+        foreach ($matches[0] as $placeholder) {
+            if (! str_contains($removedText, $placeholder)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @param  list<string>  $lines */

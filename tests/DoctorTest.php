@@ -408,3 +408,59 @@ it('does not auto-replace a trailing # reference outside a fenced code block, ev
 
     removeDirectory($newStubsPath);
 });
+
+it('never replaces a filled-in placeholder with the stub still showing [PLACEHOLDER] — AGENTS.md project/stack/date', function () {
+    (new Installer)->install($this->stubsPath, $this->tempDir);
+
+    $agentsPath = $this->tempDir.'/AGENTS.md';
+    file_put_contents(
+        $agentsPath,
+        str_replace(
+            [
+                '_Project: [PROJECT NAME] | Stack: [e.g. Laravel 13, PHP 8.5, PostgreSQL 16, Redis]_',
+                '_MAP v1.0 | Last updated: [DATE]_',
+            ],
+            [
+                '_Project: archer | Stack: Laravel 13, PHP 8.5, MySQL, Redis_',
+                '_MAP v1.0 | Last updated: 2026-06-22_',
+            ],
+            file_get_contents($agentsPath)
+        )
+    );
+
+    $findings = $this->doctor->check($this->stubsPath, $this->tempDir);
+    $forAgents = array_values(array_filter($findings, fn (array $f) => $f['file'] === 'AGENTS.md'));
+    expect(array_column($forAgents, 'id'))->toBe(['outdated-scaffold-file']);
+    expect($forAgents[0]['fixable'])->toBeFalse();
+
+    $this->doctor->fix($this->stubsPath, $this->tempDir);
+    $content = file_get_contents($agentsPath);
+
+    expect($content)->toContain('_Project: archer | Stack: Laravel 13, PHP 8.5, MySQL, Redis_');
+    expect($content)->toContain('_MAP v1.0 | Last updated: 2026-06-22_');
+    expect($content)->not->toContain('[PROJECT NAME]');
+    expect($content)->not->toContain('[DATE]');
+});
+
+it('never replaces a filled-in placeholder with the stub still showing YYYY-MM-DD — docs/STATUS.md', function () {
+    (new Installer)->install($this->stubsPath, $this->tempDir);
+
+    $statusPath = $this->tempDir.'/docs/STATUS.md';
+    file_put_contents(
+        $statusPath,
+        str_replace(
+            '_Last updated: YYYY-MM-DD by Claude_',
+            '_Last updated: 2026-07-10 by Claude_',
+            file_get_contents($statusPath)
+        )
+    );
+
+    $findings = $this->doctor->check($this->stubsPath, $this->tempDir);
+    $forStatus = array_values(array_filter($findings, fn (array $f) => $f['file'] === 'docs/STATUS.md'));
+    expect(array_column($forStatus, 'id'))->toBe(['outdated-scaffold-file']);
+    expect($forStatus[0]['fixable'])->toBeFalse();
+
+    $this->doctor->fix($this->stubsPath, $this->tempDir);
+
+    expect(file_get_contents($statusPath))->toContain('_Last updated: 2026-07-10 by Claude_');
+});

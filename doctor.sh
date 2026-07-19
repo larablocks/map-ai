@@ -16,23 +16,38 @@ source "$SCRIPT_DIR/lib.sh"
 
 TARGET=""
 FIX=0
+INTERACTIVE=0
 
 for arg in "$@"; do
   case "$arg" in
     --fix) FIX=1 ;;
+    --interactive) INTERACTIVE=1 ;;
     -*) echo "Unknown option: $arg"; exit 1 ;;
     *) TARGET="$arg" ;;
   esac
 done
 
 if [[ -z "$TARGET" ]]; then
-  echo "Usage: $0 <target-project-path> [--fix]"
+  echo "Usage: $0 <target-project-path> [--fix | --interactive]"
   echo ""
-  echo "  --fix   Apply only the additive, zero-judgment repairs: missing files,"
-  echo "          missing .gitignore/.gitattributes entries, and a"
-  echo "          .github/copilot-instructions.md regeneration — but only when"
-  echo "          regenerating it would strictly add content, never drop a line"
-  echo "          that's already there. Everything else is reported only."
+  echo "  --fix          Apply only the additive, zero-judgment repairs: missing"
+  echo "                 files, missing .gitignore/.gitattributes entries, and a"
+  echo "                 .github/copilot-instructions.md regeneration — but only"
+  echo "                 when regenerating it would strictly add content, never"
+  echo "                 drop a line that's already there. Applied unattended,"
+  echo "                 no prompts. Everything else is reported only."
+  echo "  --interactive  Same fixable set as --fix, but reviewed one file at a"
+  echo "                 time: missing files/gitignore/gitattributes entries are"
+  echo "                 still added unattended (nothing to review — there's no"
+  echo "                 existing content they could touch), then each scaffold"
+  echo "                 file with new template content, and the"
+  echo "                 copilot-instructions.md regeneration, are shown and"
+  echo "                 confirmed individually before being written."
+  exit 1
+fi
+
+if [[ "$FIX" -eq 1 && "$INTERACTIVE" -eq 1 ]]; then
+  echo "Error: --fix and --interactive are mutually exclusive — pick one."
   exit 1
 fi
 
@@ -305,10 +320,16 @@ classify_scaffold_diff() {
   eval_hunk
 }
 
-# Splices only the appliable hunks from $1 (target) vs $2 (stub) into $1, in
-# place. Returns 1 (no-op) if there's nothing to patch.
-patch_scaffold_file() {
+# The same safe-to-apply hunks patch_scaffold_file() would use for $1 (target)
+# vs $2 (stub), computed into the FH_STARTS/FH_COUNTS/FH_BODIES globals without
+# applying them — for a caller (e.g. --interactive) that wants to preview and
+# confirm before writing. Returns 1 (and leaves the FH_* arrays empty) if
+# there's nothing fixable.
+compute_fixable_hunks() {
   local target="$1" stub="$2"
+  FH_STARTS=()
+  FH_COUNTS=()
+  FH_BODIES=()
   [[ -f "$target" && -f "$stub" ]] || return 1
 
   compute_fence_lines "$target"
@@ -317,15 +338,14 @@ patch_scaffold_file() {
   diff_output="$(diff --unified=0 "$target" "$stub" 2>/dev/null || true)"
   [[ -z "$diff_output" ]] && return 1
 
-  local hunk_starts=() hunk_counts=() hunk_bodies=()
   local old_start="" old_count=1 new_count=1 removed="" added="" in_hunk=0
 
   save_hunk() {
     [[ "$in_hunk" -ne 1 ]] && return
     if [[ "$old_count" -eq 0 && "$new_count" -gt 0 ]]; then
-      hunk_starts+=("$old_start")
-      hunk_counts+=(0)
-      hunk_bodies+=("$added")
+      FH_STARTS+=("$old_start")
+      FH_COUNTS+=(0)
+      FH_BODIES+=("$added")
       return
     fi
     [[ "$old_count" -eq 0 || "$new_count" -eq 0 ]] && return
@@ -340,9 +360,9 @@ patch_scaffold_file() {
     fi
 
     if [[ "$safe" -eq 0 ]]; then
-      hunk_starts+=("$((old_start - 1))")
-      hunk_counts+=("$old_count")
-      hunk_bodies+=("$added")
+      FH_STARTS+=("$((old_start - 1))")
+      FH_COUNTS+=("$old_count")
+      FH_BODIES+=("$added")
     fi
   }
 
@@ -373,18 +393,27 @@ patch_scaffold_file() {
   done <<< "$diff_output"
   save_hunk
 
-  [[ ${#hunk_starts[@]} -eq 0 ]] && return 1
+  [[ ${#FH_STARTS[@]} -eq 0 ]] && return 1
+  return 0
+}
+
+# Splices the hunks currently held in FH_STARTS/FH_COUNTS/FH_BODIES (as left
+# by compute_fixable_hunks(), a subset is fine — see render_fixable_hunks()'s
+# sibling filtering pattern) into $1 in place. Does not re-derive or
+# re-validate safety.
+apply_fixable_hunks() {
+  local target="$1"
 
   # Order hunks by start descending (bottom-to-top) so an earlier splice
   # doesn't shift the line numbers a later one depends on. Insertion sort —
   # the hunk count per file is always small.
   local order=()
   local i j key
-  for ((i = 0; i < ${#hunk_starts[@]}; i++)); do order+=("$i"); done
+  for ((i = 0; i < ${#FH_STARTS[@]}; i++)); do order+=("$i"); done
   for ((i = 1; i < ${#order[@]}; i++)); do
     key=${order[i]}
     j=$((i - 1))
-    while ((j >= 0)) && ((hunk_starts[${order[j]}] < hunk_starts[key])); do
+    while ((j >= 0)) && ((FH_STARTS[${order[j]}] < FH_STARTS[key])); do
       order[j + 1]=${order[j]}
       ((j--))
     done
@@ -396,9 +425,9 @@ patch_scaffold_file() {
 
   local idx start cnt add_body add_lines
   for idx in "${order[@]}"; do
-    start=${hunk_starts[$idx]}
-    cnt=${hunk_counts[$idx]}
-    add_body=${hunk_bodies[$idx]}
+    start=${FH_STARTS[$idx]}
+    cnt=${FH_COUNTS[$idx]}
+    add_body=${FH_BODIES[$idx]}
     add_lines=()
     mapfile -t add_lines <<< "$add_body"
     if [[ ${#add_lines[@]} -gt 0 && -z "${add_lines[-1]}" ]]; then
@@ -408,7 +437,58 @@ patch_scaffold_file() {
   done
 
   printf '%s\n' "${file_lines[@]}" > "$target"
+}
+
+# Splices only the appliable hunks from $1 (target) vs $2 (stub) into $1, in
+# place. Returns 1 (no-op) if there's nothing to patch.
+patch_scaffold_file() {
+  local target="$1" stub="$2"
+  compute_fixable_hunks "$target" "$stub" || return 1
+  apply_fixable_hunks "$target"
   return 0
+}
+
+# Prints the hunks currently held in FH_STARTS/FH_COUNTS/FH_BODIES as a
+# unified-diff-style preview (added lines only, prefixed with "+") for a
+# human to review before confirming --interactive should apply them.
+render_fixable_hunks() {
+  local order=()
+  local i j key
+  for ((i = 0; i < ${#FH_STARTS[@]}; i++)); do order+=("$i"); done
+  for ((i = 1; i < ${#order[@]}; i++)); do
+    key=${order[i]}
+    j=$((i - 1))
+    while ((j >= 0)) && ((FH_STARTS[${order[j]}] > FH_STARTS[key])); do
+      order[j + 1]=${order[j]}
+      ((j--))
+    done
+    order[j + 1]=$key
+  done
+
+  local idx add_body add_lines line
+  for idx in "${order[@]}"; do
+    add_body=${FH_BODIES[$idx]}
+    add_lines=()
+    mapfile -t add_lines <<< "$add_body"
+    if [[ ${#add_lines[@]} -gt 0 && -z "${add_lines[-1]}" ]]; then
+      unset 'add_lines[-1]'
+    fi
+    for line in "${add_lines[@]}"; do
+      echo "    + $line"
+    done
+    echo "    ..."
+  done
+}
+
+# Prompts "$1 [Y/n] " and returns 0 for anything but an explicit n/no
+# (default-yes, matching Illuminate\Console\Command::confirm(..., true)).
+confirm_prompt() {
+  local reply
+  read -r -p "$1 [Y/n] " reply || reply="n"
+  case "$reply" in
+    [nN] | [nN][oO]) return 1 ;;
+    *) return 0 ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -436,6 +516,57 @@ if [[ "$FIX" -eq 1 ]]; then
     echo "  [FIXED]  .github/copilot-instructions.md regenerated"
   fi
   echo ""
+fi
+
+# ---------------------------------------------------------------------------
+# --interactive: same fixable set as --fix, but confirmed one file at a time.
+# Missing files/gitignore/gitattributes entries have no existing content they
+# could touch, so those are still applied unattended via install.sh — only
+# modifications to a file that already exists get a confirm gate, one prompt
+# per file showing all of that file's hunks together (not one prompt per
+# hunk), matching map-ai-laravel's InstallCommand review UX.
+# ---------------------------------------------------------------------------
+if [[ "$INTERACTIVE" -eq 1 ]]; then
+  echo "Applying additive repairs..."
+  echo ""
+  bash "$SCRIPT_DIR/install.sh" "$TARGET"
+  echo ""
+
+  for file in "${SCAFFOLD_FILES[@]}"; do
+    [[ "$file" == ".github/copilot-instructions.md" ]] && continue
+    compute_fixable_hunks "$TARGET/$file" "$SCRIPT_DIR/stubs/$file" || continue
+    echo "$file has new template content:"
+    render_fixable_hunks
+    if confirm_prompt "Apply these changes to $file?"; then
+      apply_fixable_hunks "$TARGET/$file"
+      echo "  [FIXED]  $file patched with new template content"
+    else
+      echo "  [SKIPPED] $file left as-is"
+    fi
+    echo ""
+  done
+
+  COPILOT_REGENERATED_PREVIEW=""
+  if COPILOT_REGENERATED_PREVIEW="$(regenerate_copilot "$TARGET")"; then
+    COPILOT_PATH_PREVIEW="$TARGET/.github/copilot-instructions.md"
+    COPILOT_CURRENT_PREVIEW=""
+    [[ -f "$COPILOT_PATH_PREVIEW" ]] && COPILOT_CURRENT_PREVIEW="$(cat "$COPILOT_PATH_PREVIEW")"
+
+    if [[ "$(printf '%s' "$COPILOT_CURRENT_PREVIEW" | tr -d '\r')" != "$(printf '%s' "$COPILOT_REGENERATED_PREVIEW" | tr -d '\r')" ]] \
+      && copilot_is_superset "$COPILOT_CURRENT_PREVIEW" "$COPILOT_REGENERATED_PREVIEW"; then
+      echo ".github/copilot-instructions.md is out of sync (safe to regenerate — adds only):"
+      diff <(printf '%s\n' "$COPILOT_CURRENT_PREVIEW") <(printf '%s\n' "$COPILOT_REGENERATED_PREVIEW") \
+        | grep '^>' | sed 's/^> /    + /' || true
+      echo ""
+      if confirm_prompt "Regenerate .github/copilot-instructions.md?"; then
+        fix_copilot_sync
+        echo "  [FIXED]  .github/copilot-instructions.md regenerated"
+      else
+        echo "  [SKIPPED] .github/copilot-instructions.md left as-is"
+      fi
+      echo ""
+    fi
+  fi
 fi
 
 echo "Checking MAP install at: $TARGET"

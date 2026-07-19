@@ -29,6 +29,31 @@ function runDoctorSh(string $target, bool $fix = false, ?string $mapAiDir = null
     return ['exit' => $exit, 'output' => $stdout.$stderr];
 }
 
+/**
+ * Same as runDoctorSh() but for --interactive, feeding $stdin (e.g. "y\n" or
+ * "n\n" per prompt) to the process the way a developer's terminal input would
+ * arrive.
+ *
+ * @return array{exit: int, output: string}
+ */
+function runDoctorShInteractive(string $target, string $stdin, ?string $mapAiDir = null): array
+{
+    $scriptPath = ($mapAiDir ?? dirname(Installer::stubsPath())).'/doctor.sh';
+    $cmd = ['bash', $scriptPath, $target, '--interactive'];
+
+    $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+    $process = proc_open($cmd, $descriptors, $pipes);
+    fwrite($pipes[0], $stdin);
+    fclose($pipes[0]);
+    $stdout = stream_get_contents($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $exit = proc_close($process);
+
+    return ['exit' => $exit, 'output' => $stdout.$stderr];
+}
+
 beforeEach(function () {
     $this->tempDir = sys_get_temp_dir().'/map-ai-doctor-sh-test-'.uniqid();
     mkdir($this->tempDir, 0755, true);
@@ -261,6 +286,84 @@ it('auto-replaces a reworded italic note line, leaving real content alone, match
     expect($bashPatched)->toBe($phpPatched);
 
     shell_exec('rm -rf '.escapeshellarg($syntheticRoot).' '.escapeshellarg($phpTarget));
+});
+
+it('--interactive applies a fixable hunk to a file when the developer confirms y', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+
+    $syntheticRoot = syntheticMapAiRoot(
+        $this->tempDir,
+        'docs/GLOSSARY.md',
+        ''
+    );
+    file_put_contents(
+        $syntheticRoot.'/stubs/docs/GLOSSARY.md',
+        str_replace(
+            '_Claude-maintained — append immediately when a project-specific term is encountered; human reviews for accuracy_',
+            '_Human-maintained — add entries when domain-specific language causes confusion_',
+            file_get_contents($syntheticRoot.'/stubs/docs/GLOSSARY.md')
+        )
+    );
+
+    $result = runDoctorShInteractive($this->tempDir, "y\n", $syntheticRoot);
+
+    expect($result['output'])->toContain('docs/GLOSSARY.md has new template content');
+    expect($result['output'])->toContain('+ _Human-maintained — add entries when domain-specific language causes confusion_');
+    expect($result['output'])->toContain('[FIXED]  docs/GLOSSARY.md patched with new template content');
+    expect($result['exit'])->toBe(0);
+
+    $patched = file_get_contents($this->tempDir.'/docs/GLOSSARY.md');
+    expect($patched)->toContain('_Human-maintained — add entries when domain-specific language causes confusion_');
+    expect($patched)->not->toContain('_Claude-maintained — append immediately');
+
+    shell_exec('rm -rf '.escapeshellarg($syntheticRoot));
+});
+
+it('--interactive leaves a fixable hunk untouched when the developer declines with n', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+
+    $syntheticRoot = syntheticMapAiRoot(
+        $this->tempDir,
+        'docs/GLOSSARY.md',
+        ''
+    );
+    file_put_contents(
+        $syntheticRoot.'/stubs/docs/GLOSSARY.md',
+        str_replace(
+            '_Claude-maintained — append immediately when a project-specific term is encountered; human reviews for accuracy_',
+            '_Human-maintained — add entries when domain-specific language causes confusion_',
+            file_get_contents($syntheticRoot.'/stubs/docs/GLOSSARY.md')
+        )
+    );
+    $original = file_get_contents($this->tempDir.'/docs/GLOSSARY.md');
+
+    $result = runDoctorShInteractive($this->tempDir, "n\n", $syntheticRoot);
+
+    expect($result['output'])->toContain('[SKIPPED] docs/GLOSSARY.md left as-is');
+    expect($result['output'])->toContain('[FIXABLE]  missing-template-updates docs/GLOSSARY.md');
+    expect($result['exit'])->toBe(1);
+    expect(file_get_contents($this->tempDir.'/docs/GLOSSARY.md'))->toBe($original);
+
+    shell_exec('rm -rf '.escapeshellarg($syntheticRoot));
+});
+
+it('rejects passing both --fix and --interactive', function () {
+    $result = (function () {
+        $scriptPath = dirname(Installer::stubsPath()).'/doctor.sh';
+        $cmd = ['bash', $scriptPath, $this->tempDir, '--fix', '--interactive'];
+        $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+        $process = proc_open($cmd, $descriptors, $pipes);
+        $stdout = stream_get_contents($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $exit = proc_close($process);
+
+        return ['exit' => $exit, 'output' => $stdout.$stderr];
+    })();
+
+    expect($result['exit'])->toBe(1);
+    expect($result['output'])->toContain('mutually exclusive');
 });
 
 it('auto-replaces a reworded HTML comment block, leaving real bug entries alone, matching Doctor.php byte for byte', function () {

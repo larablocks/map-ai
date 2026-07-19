@@ -163,6 +163,14 @@ $findings = $doctor->check(Installer::stubsPath(), '/path/to/project');
 // Applies only the fixable: true findings from check(). Safe to run unattended
 // or wire into CI — it never touches real project content.
 $applied = $doctor->fix(Installer::stubsPath(), '/path/to/project');
+
+// For a caller that wants to preview and confirm before writing (e.g. an
+// interactive per-file "apply these N changes?" prompt) instead of applying
+// everything unattended: fixableHunks() computes the same safe hunks fix()
+// would use for one file without writing them, applyHunks() splices a
+// (sub)set of those hunks in once the developer has confirmed.
+$hunks = $doctor->fixableHunks('/path/to/project/docs/GLOSSARY.md', Installer::stubsPath().'/docs/GLOSSARY.md');
+$doctor->applyHunks('/path/to/project/docs/GLOSSARY.md', $hunks);
 ```
 
 `check()` reports these findings:
@@ -191,11 +199,12 @@ Real content (bug entries, schema tables, decision records, filled-in commands) 
 `doctor.sh` is a standalone bash port of `Doctor` with identical behavior — same findings, same fix-only-what's-safe guarantee, verified byte-for-byte against the PHP implementation for both the `.github/copilot-instructions.md` regeneration case and the general instructional-note-patching case. It exists because the MAP convention itself is language-agnostic (it installs into any project via `install.sh`, PHP or not — see [Any other PHP project](#any-other-php-project) above, which works the same way for non-PHP projects too), but the PHP `Doctor` class only helps if PHP happens to be present. `doctor.sh` doesn't have that requirement — it needs nothing but bash, matching `install.sh`'s own zero-runtime-dependency design.
 
 ```bash
-./doctor.sh /path/to/project           # report only — exits 1 if anything needs attention
-./doctor.sh /path/to/project --fix     # applies fixable findings, then reports what's left
+./doctor.sh /path/to/project                 # report only — exits 1 if anything needs attention
+./doctor.sh /path/to/project --fix           # applies fixable findings, then reports what's left
+./doctor.sh /path/to/project --interactive   # same fixable set as --fix, confirmed one file at a time
 ```
 
-Report-only mode exits `1` on any finding at all (fixable or not) — CI-friendly, since any drift is worth surfacing. `--fix` mode exits `0` once everything it can apply is applied, `1` only if a review-only finding remains.
+Report-only mode exits `1` on any finding at all (fixable or not) — CI-friendly, since any drift is worth surfacing. `--fix` mode exits `0` once everything it can apply is applied, `1` only if a review-only finding remains. `--interactive` still applies missing files/`.gitignore`/`.gitattributes` entries unattended (there's no existing content they could touch), but shows each scaffold file's fixable hunks — and the `.github/copilot-instructions.md` regeneration — and asks `[Y/n]` before writing, one prompt per file with all of that file's changes together, not one prompt per hunk.
 
 `doctor.sh` sources `lib.sh` for the `MANAGED_FILES`/`SCAFFOLD_FILES` lists (the same ones `install.sh` and `Installer.php` use — kept in sync by an automated test), and shells out to `install.sh` internally for the missing-file/gitignore/gitattributes repairs rather than reimplementing that logic a third time.
 

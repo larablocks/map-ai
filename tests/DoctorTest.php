@@ -464,3 +464,46 @@ it('never replaces a filled-in placeholder with the stub still showing YYYY-MM-D
 
     expect(file_get_contents($statusPath))->toContain('_Last updated: 2026-07-10 by Claude_');
 });
+
+it('fixableHunks() previews what applyHunks() would write, for a caller that wants to confirm first', function () {
+    (new Installer)->install($this->stubsPath, $this->tempDir);
+    $glossaryPath = $this->tempDir.'/docs/GLOSSARY.md';
+    file_put_contents(
+        $glossaryPath,
+        str_replace(
+            '_Claude-maintained — append immediately when a project-specific term is encountered; human reviews for accuracy_',
+            '_Human-maintained — add entries when domain-specific language causes confusion_',
+            file_get_contents($glossaryPath)
+        )
+    );
+
+    $hunks = $this->doctor->fixableHunks($glossaryPath, $this->stubsPath.'/docs/GLOSSARY.md');
+
+    expect($hunks)->toHaveCount(1);
+    expect($hunks[0]['lines'])->toBe(['_Claude-maintained — append immediately when a project-specific term is encountered; human reviews for accuracy_']);
+    // Nothing written yet — fixableHunks() only previews.
+    expect(file_get_contents($glossaryPath))->toContain('_Human-maintained');
+
+    $this->doctor->applyHunks($glossaryPath, $hunks);
+
+    expect(file_get_contents($glossaryPath))->toContain('_Claude-maintained — append immediately');
+});
+
+it('fixableHunks() never includes a hunk that would discard a filled-in placeholder', function () {
+    (new Installer)->install($this->stubsPath, $this->tempDir);
+    $agentsPath = $this->tempDir.'/AGENTS.md';
+    file_put_contents(
+        $agentsPath,
+        str_replace(
+            '_Project: [PROJECT NAME] | Stack: [e.g. Laravel 13, PHP 8.5, PostgreSQL 16, Redis]_',
+            '_Project: archer | Stack: Laravel 13, PHP 8.5, MySQL, Redis_',
+            file_get_contents($agentsPath)
+        )
+    );
+
+    $hunks = $this->doctor->fixableHunks($agentsPath, $this->stubsPath.'/AGENTS.md');
+
+    // The placeholder guard rejects this hunk outright — there's nothing fixable
+    // to preview at all, not just a hunk with the placeholder line filtered out.
+    expect($hunks)->toBe([]);
+});

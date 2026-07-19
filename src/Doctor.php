@@ -206,7 +206,15 @@ class Doctor
         ];
     }
 
-    private function fixCopilotSync(string $targetPath): bool
+    /**
+     * Regenerates .github/copilot-instructions.md at $targetPath, but only when doing
+     * so is superset-safe — the same guarantee check()'s copilot-out-of-sync finding's
+     * `fixable` flag reports. Public so a caller that already confirmed with the
+     * developer (e.g. an interactive per-file prompt) can apply it directly, without
+     * re-deriving the safety check itself. Returns false if there was nothing to do
+     * (in sync, unsafe, or a source file is missing).
+     */
+    public function fixCopilotSync(string $targetPath): bool
     {
         $regenerated = $this->regenerateCopilotInstructions($targetPath);
 
@@ -548,15 +556,49 @@ class Doctor
      */
     private function patchScaffoldFile(string $targetFile, string $stubFile): bool
     {
+        $hunks = $this->fixableHunks($targetFile, $stubFile);
+
+        if ($hunks === []) {
+            return false;
+        }
+
+        $this->applyHunks($targetFile, $hunks);
+
+        return true;
+    }
+
+    /**
+     * The same safe-to-apply hunks fix() would use for $targetFile vs $stubFile,
+     * without applying them — for a caller that wants to preview and confirm before
+     * writing (e.g. an interactive per-file "apply these N changes?" prompt). Each
+     * hunk's `lines` are the exact content that would be spliced in; render those for
+     * review, then pass a (sub)set to applyHunks(). Empty if there's nothing safe to
+     * apply — including when the two files are already identical or don't exist.
+     *
+     * @return list<array{start: int, count: int, lines: list<string>}>
+     */
+    public function fixableHunks(string $targetFile, string $stubFile): array
+    {
         $diff = $this->diffAgainstStub($targetFile, $stubFile);
 
-        if ($diff === null || $diff['appliableHunks'] === []) {
-            return false;
+        return $diff['appliableHunks'] ?? [];
+    }
+
+    /**
+     * Splices $hunks (as returned by fixableHunks(), a subset is fine) into
+     * $targetFile in place. Does not re-derive or re-validate safety — callers that
+     * want the safety guarantees must source hunks from fixableHunks()/check().
+     *
+     * @param  list<array{start: int, count: int, lines: list<string>}>  $hunks
+     */
+    public function applyHunks(string $targetFile, array $hunks): void
+    {
+        if ($hunks === []) {
+            return;
         }
 
         $lines = explode("\n", (string) file_get_contents($targetFile));
 
-        $hunks = $diff['appliableHunks'];
         usort($hunks, fn (array $a, array $b) => $b['start'] <=> $a['start']);
 
         foreach ($hunks as $hunk) {
@@ -564,7 +606,5 @@ class Doctor
         }
 
         file_put_contents($targetFile, implode("\n", $lines));
-
-        return true;
     }
 }

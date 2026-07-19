@@ -27,6 +27,25 @@ MANAGED_FILES=(
 )
 
 # ---------------------------------------------------------------------------
+# Gitignored personal files, bootstrapped from their tracked *.example.md
+# counterpart on first install — never overwritten if the personal file
+# already exists. Each entry is "example:personal". framework.example.md is
+# deliberately excluded — it needs a project-specific rename (e.g. laravel.md)
+# this generic example->personal mapping can't determine; docs/SETUP.md
+# documents the manual rename command, and AGENTS.md's session-start ritual
+# self-creates it correctly on first need. Mirrors Installer::PERSONAL_FILES.
+# ---------------------------------------------------------------------------
+PERSONAL_FILES=(
+  "docs/MEMORY.example.md:docs/MEMORY.md"
+  "docs/memory/gotchas.example.md:docs/memory/gotchas.md"
+  "docs/memory/database.example.md:docs/memory/database.md"
+  "docs/memory/testing.example.md:docs/memory/testing.md"
+  "docs/memory/environment.example.md:docs/memory/environment.md"
+  "docs/memory/performance.example.md:docs/memory/performance.md"
+  "docs/memory/agents.example.md:docs/memory/agents.md"
+)
+
+# ---------------------------------------------------------------------------
 # User-owned scaffold files — copied once, never overwritten without --force,
 # and backed up to <file>.bak before any forced overwrite.
 # ---------------------------------------------------------------------------

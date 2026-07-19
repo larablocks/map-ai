@@ -88,6 +88,26 @@ it('exits 0 clean right after --fix on an empty project', function () {
     expect($result['output'])->toContain('Clean');
 });
 
+it('bootstraps personal files from install.sh, matching Installer::bootstrapPersonalFiles()', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+
+    foreach (Installer::PERSONAL_FILES as $personal) {
+        expect(file_exists($this->tempDir.'/'.$personal))->toBeTrue();
+    }
+    // framework.example.md is deliberately excluded — needs a project-specific rename.
+    expect(file_exists($this->tempDir.'/docs/memory/framework.md'))->toBeFalse();
+});
+
+it('does not overwrite an existing personal file on re-install', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+    file_put_contents($this->tempDir.'/docs/memory/gotchas.md', 'my own notes');
+
+    $output = shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+
+    expect($output)->toContain('[EXISTS] docs/memory/gotchas.md');
+    expect(file_get_contents($this->tempDir.'/docs/memory/gotchas.md'))->toBe('my own notes');
+});
+
 it('never touches an out-of-date scaffold file, in check or fix mode', function () {
     shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
     file_put_contents($this->tempDir.'/docs/BUGS.md', "# stale project bugs\ncustom content\n");

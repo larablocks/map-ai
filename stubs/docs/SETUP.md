@@ -17,14 +17,16 @@ git clone [repo-url] && cd [project-name]
 # 2. Fill in AGENTS.md — line 2: project name and stack; line 3: today's date
 
 # 3. Initialize personal files (gitignored)
-# All of these are optional — AGENTS.md's session start ritual self-creates MEMORY.md,
-# gotchas.md, and shared.md on first session if missing, and self-creates each other topic
-# file (including the stack-specific one, renamed from framework.example.md) the first time
-# its own Load rule needs it. Run these cp commands only if you want to review or edit a
-# file before your first AI session, or want the stack-specific file renamed up front.
+# All of these are optional to run by hand — running install.sh/doctor.sh --fix (or
+# map-ai-laravel's map:install) already bootstraps every one of these except the
+# stack-specific rename below, and AGENTS.md's session start ritual self-creates
+# MEMORY.md, gotchas.md, and shared.md on first session if still missing, and
+# self-creates each other topic file the first time its own Load rule needs it.
+# Run these cp commands by hand only if you want to review/edit a file before your
+# first install/AI session, or want the stack-specific file renamed up front.
 cp docs/MEMORY.example.md docs/MEMORY.md
 cp docs/memory/gotchas.example.md docs/memory/gotchas.md
-cp docs/memory/framework.example.md docs/memory/[stack].md    # e.g. laravel.md; then update [stack].md ref in docs/MEMORY.md
+cp docs/memory/framework.example.md docs/memory/[stack].md    # e.g. laravel.md; then update [stack].md ref in docs/MEMORY.md — not auto-bootstrapped, needs this rename
 cp docs/memory/database.example.md docs/memory/database.md
 cp docs/memory/testing.example.md docs/memory/testing.md
 cp docs/memory/environment.example.md docs/memory/environment.md

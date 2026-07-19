@@ -236,6 +236,35 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Initialize personal files — gitignored, bootstrapped from their tracked
+# *.example.md counterpart, never overwritten if already present. Mirrors
+# Installer::bootstrapPersonalFiles(); PERSONAL_FILES comes from lib.sh.
+# ---------------------------------------------------------------------------
+echo ""
+echo "Initializing personal files..."
+echo ""
+
+for pair in "${PERSONAL_FILES[@]}"; do
+  example="${pair%%:*}"
+  personal="${pair#*:}"
+  src="$TARGET/$example"
+  dst="$TARGET/$personal"
+
+  if [[ ! -f "$src" ]]; then
+    echo "  [WARN]   source not found — $example"
+    continue
+  fi
+
+  if [[ -f "$dst" ]]; then
+    echo "  [EXISTS] $personal"
+    continue
+  fi
+
+  cp "$src" "$dst"
+  echo "  [INIT]   $personal"
+done
+
+# ---------------------------------------------------------------------------
 # Summary and next steps
 # ---------------------------------------------------------------------------
 echo ""
@@ -245,7 +274,5 @@ echo "Next steps:"
 echo "  1. Edit AGENTS.md line 2 — set project name and stack"
 echo "  2. Edit AGENTS.md line 3 — set today's date"
 echo "  3. Fill in the Commands section of AGENTS.md (test, build, start)"
-echo "  4. Each developer runs the 'cp' commands in docs/SETUP.md step 3"
-echo "     to initialize their personal gitignored files (docs/MEMORY.md, etc.)"
 echo ""
 echo "MAP install complete."

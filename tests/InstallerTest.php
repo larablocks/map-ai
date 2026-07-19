@@ -419,6 +419,23 @@ it('keeps lib.sh MANAGED_FILES and SCAFFOLD_FILES in sync with Installer.php', f
     expect($extractArray('SCAFFOLD_FILES'))->toBe(Installer::SCAFFOLD_FILES);
 });
 
+it('keeps lib.sh PERSONAL_FILES in sync with Installer.php', function () {
+    $libShPath = dirname(Installer::stubsPath()).'/lib.sh';
+    $libSh = file_get_contents($libShPath);
+
+    preg_match('/^PERSONAL_FILES=\((.*?)^\)/ms', $libSh, $matches);
+    $pairs = array_values(array_filter(array_map('trim', explode("\n", $matches[1] ?? ''))));
+
+    $extracted = [];
+    foreach ($pairs as $pair) {
+        // Each entry is a quoted "example:personal" string.
+        [$example, $personal] = explode(':', trim($pair, '"'), 2);
+        $extracted[$example] = $personal;
+    }
+
+    expect($extracted)->toBe(Installer::PERSONAL_FILES);
+});
+
 it('never writes through a symlinked destination, even with force', function () {
     $outside = sys_get_temp_dir().'/map-ai-symlink-target-'.uniqid();
     file_put_contents($outside, 'precious data outside the target directory');

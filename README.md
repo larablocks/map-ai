@@ -133,7 +133,7 @@ Prefer to drive it from PHP instead of the shell? Call the `Installer` class dir
 ### After installing
 
 1. Review `AGENTS.md` — fill in any remaining `[...]` placeholders (project name, stack, commands) that couldn't be auto-detected.
-2. Each developer runs the `cp` commands in `docs/SETUP.md` step 3 to initialize their own gitignored `docs/memory/*.md` files.
+2. `install.sh` already bootstrapped each developer's gitignored `docs/memory/*.md` files from their `.example.md` counterpart (see `docs/SETUP.md` step 3 for the manual `cp` commands, only needed to review/edit one before first use, or to run the stack-specific `framework.example.md` rename — that one file is never auto-bootstrapped, since the target filename is project-specific).
 
 ### Want a wrapper for another framework?
 

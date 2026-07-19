@@ -39,13 +39,34 @@ class Doctor
             ];
         }
 
-        foreach ((new Installer)->scaffoldOutOfDate($stubsPath, $targetPath) as $file) {
-            $findings[] = [
-                'id' => 'outdated-scaffold-file',
-                'fixable' => false,
-                'file' => $file,
-                'message' => "Differs from the current template stub — merge in what's new by hand, never auto-applied.",
-            ];
+        foreach (Installer::SCAFFOLD_FILES as $file) {
+            if ($file === '.github/copilot-instructions.md') {
+                continue; // handled separately below — regenerated from the project's own sources, not the stub
+            }
+
+            $diff = $this->diffAgainstStub($targetPath.'/'.$file, $stubsPath.'/'.$file);
+
+            if ($diff === null) {
+                continue;
+            }
+
+            if ($diff['appliableHunks'] !== []) {
+                $findings[] = [
+                    'id' => 'missing-template-updates',
+                    'fixable' => true,
+                    'file' => $file,
+                    'message' => 'Has new template content or an updated instructional note — safe to patch in, real content is never touched.',
+                ];
+            }
+
+            if ($diff['hasModifications']) {
+                $findings[] = [
+                    'id' => 'outdated-scaffold-file',
+                    'fixable' => false,
+                    'file' => $file,
+                    'message' => "Differs from the current stub in a way that isn't a pure addition — needs a human diff and merge.",
+                ];
+            }
         }
 
         if ($finding = $this->checkAgentsLineLimit($targetPath)) {
@@ -85,6 +106,18 @@ class Doctor
 
         if ($installResult['gitattributes'] === 'updated') {
             $applied[] = $this->reportFix(['id' => 'gitattributes', 'file' => '.gitattributes', 'action' => 'updated'], $progress);
+        }
+
+        // Patch in new template content before regenerating copilot-instructions.md, so
+        // the regeneration reflects whatever AGENTS.md just picked up.
+        foreach (Installer::SCAFFOLD_FILES as $file) {
+            if ($file === '.github/copilot-instructions.md') {
+                continue;
+            }
+
+            if ($this->patchScaffoldFile($targetPath.'/'.$file, $stubsPath.'/'.$file)) {
+                $applied[] = $this->reportFix(['id' => 'missing-template-updates', 'file' => $file, 'action' => 'patched'], $progress);
+            }
         }
 
         if ($this->fixCopilotSync($targetPath)) {
@@ -283,5 +316,222 @@ class Doctor
     private function normalize(string $content): string
     {
         return trim(preg_replace('/\R/', "\n", $content) ?? $content);
+    }
+
+    /**
+     * Diffs $targetFile against $stubFile and classifies the result. A "pure addition"
+     * hunk is stub content with no corresponding removal from the target — safe to
+     * splice in. A hunk that replaces or removes target content is a "modification" —
+     * never touched, surfaced for a human instead. Content the target has that the stub
+     * doesn't (real customization) produces neither and is never flagged.
+     *
+     * @return array{appliableHunks: list<array{start: int, count: int, lines: list<string>}>, hasModifications: bool}|null
+     *                                                                                                                      null if either file doesn't exist.
+     */
+    private function diffAgainstStub(string $targetFile, string $stubFile): ?array
+    {
+        if (! file_exists($targetFile) || ! file_exists($stubFile)) {
+            return null;
+        }
+
+        $process = proc_open(
+            ['diff', '--unified=0', $targetFile, $stubFile],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes
+        );
+
+        if ($process === false) {
+            return null;
+        }
+
+        $output = stream_get_contents($pipes[1]) ?: '';
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_close($process);
+
+        return $this->classifyDiffHunks($output, $this->fencedCodeLines($targetFile));
+    }
+
+    /** @return array<int, true> set of 1-indexed line numbers inside a ``` fence */
+    private function fencedCodeLines(string $file): array
+    {
+        $lines = explode("\n", (string) file_get_contents($file));
+        $inFence = false;
+        $result = [];
+
+        foreach ($lines as $i => $line) {
+            if (str_starts_with(ltrim($line), '```')) {
+                $inFence = ! $inFence;
+
+                continue;
+            }
+
+            if ($inFence) {
+                $result[$i + 1] = true;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * A hunk is appliable in three cases: a pure addition (oldCount 0 — stub has new
+     * lines with nothing removed from target), spliced in as-is; a modification where
+     * every line on both sides is a full-line italic note or HTML-comment block — the
+     * conventions every stub file uses for its own instructional text, never used for
+     * real content; or a single-line modification inside a fenced code block where only
+     * the trailing `  # comment` differs and the real command before it is unchanged.
+     * Any other modification is left for a human.
+     *
+     * @param  array<int, true>  $targetFenceLines
+     * @return array{appliableHunks: list<array{start: int, count: int, lines: list<string>}>, hasModifications: bool}
+     */
+    private function classifyDiffHunks(string $diffOutput, array $targetFenceLines): array
+    {
+        $appliableHunks = [];
+        $hasModifications = false;
+
+        $lines = explode("\n", $diffOutput);
+        $count = count($lines);
+        $i = 0;
+
+        while ($i < $count) {
+            if (! preg_match('/^@@ -(\d+)(?:,(\d+))? \+\d+(?:,(\d+))? @@/', $lines[$i], $m)) {
+                $i++;
+
+                continue;
+            }
+
+            $oldStart = (int) $m[1];
+            // PCRE backfills an unmatched optional group with '' (not unset) whenever a
+            // later group participates — isset() alone can't tell "omitted" from "empty".
+            $oldCount = ($m[2] ?? '') !== '' ? (int) $m[2] : 1;
+            $newCount = ($m[3] ?? '') !== '' ? (int) $m[3] : 1;
+            $i++;
+
+            $removed = [];
+            $added = [];
+            while ($i < $count && ! str_starts_with($lines[$i], '@@ ')) {
+                if (str_starts_with($lines[$i], '+')) {
+                    $added[] = substr($lines[$i], 1);
+                } elseif (str_starts_with($lines[$i], '-')) {
+                    $removed[] = substr($lines[$i], 1);
+                }
+                $i++;
+            }
+
+            if ($oldCount === 0 && $newCount > 0) {
+                $appliableHunks[] = ['start' => $oldStart, 'count' => 0, 'lines' => $added];
+            } elseif ($oldCount > 0 && $newCount > 0) {
+                $isInlineCommentHunk = $oldCount === 1 && $newCount === 1
+                    && isset($targetFenceLines[$oldStart])
+                    && $this->isSafeInlineCommentModification($removed[0], $added[0]);
+
+                if ($this->isSafeNoteModification($removed, $added) || $isInlineCommentHunk) {
+                    $appliableHunks[] = ['start' => $oldStart - 1, 'count' => $oldCount, 'lines' => $added];
+                } else {
+                    $hasModifications = true;
+                }
+            }
+            // oldCount > 0 && newCount === 0: target has content the stub doesn't —
+            // that's the target's own customization, never flagged either way.
+        }
+
+        return ['appliableHunks' => $appliableHunks, 'hasModifications' => $hasModifications];
+    }
+
+    /**
+     * A modification is safe to auto-apply when both sides are entirely one of the
+     * stub's two conventions for meta/instructional text — full-line italic notes, or
+     * a complete HTML comment block. Real content (bug entries, schema tables, decision
+     * records) is never written as either in these files, so both are safe to always
+     * take from the stub. Anything else (prose bullets, headings, real data) is left
+     * for a human — those are exactly the shapes real project content also takes.
+     *
+     * @param  list<string>  $removed
+     * @param  list<string>  $added
+     */
+    private function isSafeNoteModification(array $removed, array $added): bool
+    {
+        if ($removed === [] || $added === []) {
+            return false;
+        }
+
+        if ($this->isAllItalicNotes($removed) && $this->isAllItalicNotes($added)) {
+            return true;
+        }
+
+        return $this->isHtmlCommentBlock($removed) && $this->isHtmlCommentBlock($added);
+    }
+
+    /** @param  list<string>  $lines */
+    private function isAllItalicNotes(array $lines): bool
+    {
+        foreach ($lines as $line) {
+            if (! preg_match('/^_.*_$/', rtrim($line))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @param  list<string>  $lines */
+    private function isHtmlCommentBlock(array $lines): bool
+    {
+        $first = ltrim($lines[0]);
+        $last = rtrim((string) end($lines));
+
+        return str_starts_with($first, '<!--') && str_ends_with($last, '-->');
+    }
+
+    /**
+     * Safe only when both lines have a trailing `  # comment` and the real content
+     * before it is byte-identical — i.e. only the comment changed. Scoped to fenced
+     * code lines by the caller, since `#` has no reserved meaning in prose and this
+     * check alone can't tell a shell comment from, say, a literal issue reference.
+     */
+    private function isSafeInlineCommentModification(string $removedLine, string $addedLine): bool
+    {
+        $removedPrefix = $this->inlineCommentPrefix($removedLine);
+        $addedPrefix = $this->inlineCommentPrefix($addedLine);
+
+        return $removedPrefix !== null && $removedPrefix === $addedPrefix;
+    }
+
+    /** Everything before a whitespace-preceded `#`, or null if the line has none. */
+    private function inlineCommentPrefix(string $line): ?string
+    {
+        if (preg_match('/^(.*\S)\s+#.*$/', rtrim($line), $m)) {
+            return $m[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * Splices only the appliable hunks from $targetFile vs $stubFile into $targetFile,
+     * in place. Returns true if anything was written.
+     */
+    private function patchScaffoldFile(string $targetFile, string $stubFile): bool
+    {
+        $diff = $this->diffAgainstStub($targetFile, $stubFile);
+
+        if ($diff === null || $diff['appliableHunks'] === []) {
+            return false;
+        }
+
+        $lines = explode("\n", (string) file_get_contents($targetFile));
+
+        $hunks = $diff['appliableHunks'];
+        usort($hunks, fn (array $a, array $b) => $b['start'] <=> $a['start']);
+
+        foreach ($hunks as $hunk) {
+            array_splice($lines, $hunk['start'], $hunk['count'], $hunk['lines']);
+        }
+
+        file_put_contents($targetFile, implode("\n", $lines));
+
+        return true;
     }
 }

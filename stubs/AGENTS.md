@@ -81,7 +81,7 @@ New agent/API/integration/component docs → scan the target folder's frontmatte
 
 ## Hard rules
 - IMPORTANT: Never delete files, database records, or data without explicit developer confirmation
-- IMPORTANT: Never modify AGENTS.md, CLAUDE.md, GEMINI.md, or .claude/rules/*.md without explicit developer instruction — these are MAP configuration files, not AI-maintained docs
+- IMPORTANT: Never modify AGENTS.md, CLAUDE.md, GEMINI.md, or .claude/rules/*.md without explicit developer instruction — these are MAP configuration files, not AI-maintained docs. Running `doctor.sh`/`Doctor::fix()` counts as that instruction — it only ever applies pure additions or safe note/comment swaps, never rewrites real content
 - Use YYYY-MM-DD for all dates in all files
 - IMPORTANT: Only update docs/TESTING_COVERAGE.md after running coverage — never estimate without fresh output
 - IMPORTANT: Never skip the session start ritual

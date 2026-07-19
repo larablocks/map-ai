@@ -10,9 +10,9 @@ use larablocks\MapAi\Installer;
  *
  * @return array{exit: int, output: string}
  */
-function runDoctorSh(string $target, bool $fix = false): array
+function runDoctorSh(string $target, bool $fix = false, ?string $mapAiDir = null): array
 {
-    $scriptPath = dirname(Installer::stubsPath()).'/doctor.sh';
+    $scriptPath = ($mapAiDir ?? dirname(Installer::stubsPath())).'/doctor.sh';
     $cmd = ['bash', $scriptPath, $target];
     if ($fix) {
         $cmd[] = '--fix';
@@ -124,4 +124,242 @@ it('produces byte-identical copilot-instructions.md output to Doctor.php for the
     $bashRegenerated = file_get_contents($this->tempDir.'/.github/copilot-instructions.md');
 
     expect($bashRegenerated)->toBe($phpRegenerated);
+});
+
+/**
+ * Builds a full synthetic map-ai root (doctor.sh/install.sh/lib.sh + a stubs/ copy)
+ * so a test can point doctor.sh at stubs with extra content, without touching the
+ * real stubs/ directory. doctor.sh resolves its stub path from its own location,
+ * so the copy has to be a real sibling directory, not just a stub folder.
+ */
+function syntheticMapAiRoot(string $tempBase, string $relativeStubFile, string $extraLine): string
+{
+    $root = $tempBase.'-maproot';
+    mkdir($root.'/stubs', 0755, true);
+
+    $mapAiDir = dirname(Installer::stubsPath());
+    foreach (['doctor.sh', 'install.sh', 'lib.sh'] as $script) {
+        copy($mapAiDir.'/'.$script, $root.'/'.$script);
+    }
+
+    $source = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator(Installer::stubsPath(), RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST
+    );
+    foreach ($source as $item) {
+        $dest = $root.'/stubs/'.$source->getSubPathName();
+        $item->isDir() ? mkdir($dest, 0755, true) : copy($item->getPathname(), $dest);
+    }
+
+    file_put_contents($root.'/stubs/'.$relativeStubFile, file_get_contents($root.'/stubs/'.$relativeStubFile).$extraLine);
+
+    return $root;
+}
+
+it('never flags a scaffold file that only has extra content the stub does not', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+    file_put_contents(
+        $this->tempDir.'/docs/GLOSSARY.md',
+        file_get_contents($this->tempDir.'/docs/GLOSSARY.md')."\n| BUG-N | This project's bug ID convention |\n"
+    );
+
+    $result = runDoctorSh($this->tempDir);
+
+    expect($result['output'])->not->toContain('docs/GLOSSARY.md');
+    expect($result['exit'])->toBe(0);
+});
+
+it('flags new stub content as missing-template-updates and patches it in without touching custom content', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+    $agents = file_get_contents($this->tempDir.'/AGENTS.md');
+    file_put_contents(
+        $this->tempDir.'/AGENTS.md',
+        str_replace('## Write rules', "Read @docs/JOB_SOURCES.md before proposing a new scraper\n\n## Write rules", $agents)
+    );
+
+    $syntheticRoot = syntheticMapAiRoot($this->tempDir, 'AGENTS.md', "Read @docs/FEATURE_FLAGS.md when starting a new feature\n");
+
+    $check = runDoctorSh($this->tempDir, mapAiDir: $syntheticRoot);
+    expect($check['output'])->toContain('[FIXABLE]  missing-template-updates AGENTS.md');
+
+    runDoctorSh($this->tempDir, fix: true, mapAiDir: $syntheticRoot);
+    $patched = file_get_contents($this->tempDir.'/AGENTS.md');
+
+    expect($patched)->toContain('Read @docs/FEATURE_FLAGS.md when starting a new feature');
+    expect($patched)->toContain('Read @docs/JOB_SOURCES.md before proposing a new scraper');
+
+    shell_exec('rm -rf '.escapeshellarg($syntheticRoot));
+});
+
+it('produces byte-identical patched output to Doctor.php for the same project and stub state', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+    $agents = file_get_contents($this->tempDir.'/AGENTS.md');
+    file_put_contents(
+        $this->tempDir.'/AGENTS.md',
+        str_replace('## Write rules', "Read @docs/JOB_SOURCES.md before proposing a new scraper\n\n## Write rules", $agents)
+    );
+
+    $syntheticRoot = syntheticMapAiRoot($this->tempDir, 'AGENTS.md', "Read @docs/FEATURE_FLAGS.md when starting a new feature\n");
+
+    $phpTarget = $this->tempDir.'-php-copy';
+    shell_exec('cp -r '.escapeshellarg($this->tempDir).' '.escapeshellarg($phpTarget));
+    (new Doctor)->fix($syntheticRoot.'/stubs', $phpTarget);
+    $phpPatched = file_get_contents($phpTarget.'/AGENTS.md');
+
+    runDoctorSh($this->tempDir, fix: true, mapAiDir: $syntheticRoot);
+    $bashPatched = file_get_contents($this->tempDir.'/AGENTS.md');
+
+    expect($bashPatched)->toBe($phpPatched);
+
+    shell_exec('rm -rf '.escapeshellarg($syntheticRoot).' '.escapeshellarg($phpTarget));
+});
+
+it('auto-replaces a reworded italic note line, leaving real content alone, matching Doctor.php byte for byte', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+    file_put_contents(
+        $this->tempDir.'/docs/GLOSSARY.md',
+        file_get_contents($this->tempDir.'/docs/GLOSSARY.md')."| BUG-N | This project's bug ID convention |\n"
+    );
+
+    $syntheticRoot = $this->tempDir.'-maproot';
+    mkdir($syntheticRoot.'/stubs', 0755, true);
+    foreach (['doctor.sh', 'install.sh', 'lib.sh'] as $script) {
+        copy($this->mapAiDir.'/'.$script, $syntheticRoot.'/'.$script);
+    }
+    $source = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator(Installer::stubsPath(), RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST
+    );
+    foreach ($source as $item) {
+        $dest = $syntheticRoot.'/stubs/'.$source->getSubPathName();
+        $item->isDir() ? mkdir($dest, 0755, true) : copy($item->getPathname(), $dest);
+    }
+    file_put_contents(
+        $syntheticRoot.'/stubs/docs/GLOSSARY.md',
+        str_replace(
+            '_Claude-maintained — append immediately when a project-specific term is encountered; human reviews for accuracy_',
+            '_Human-maintained — add entries when domain-specific language causes confusion_',
+            file_get_contents($syntheticRoot.'/stubs/docs/GLOSSARY.md')
+        )
+    );
+
+    $check = runDoctorSh($this->tempDir, mapAiDir: $syntheticRoot);
+    expect($check['output'])->toContain('[FIXABLE]  missing-template-updates docs/GLOSSARY.md');
+    expect($check['output'])->not->toContain('[REVIEW]   outdated-scaffold-file  docs/GLOSSARY.md');
+
+    $phpTarget = $this->tempDir.'-php-copy';
+    shell_exec('cp -r '.escapeshellarg($this->tempDir).' '.escapeshellarg($phpTarget));
+    (new Doctor)->fix($syntheticRoot.'/stubs', $phpTarget);
+    $phpPatched = file_get_contents($phpTarget.'/docs/GLOSSARY.md');
+
+    runDoctorSh($this->tempDir, fix: true, mapAiDir: $syntheticRoot);
+    $bashPatched = file_get_contents($this->tempDir.'/docs/GLOSSARY.md');
+
+    expect($bashPatched)->toContain('_Human-maintained — add entries when domain-specific language causes confusion_');
+    expect($bashPatched)->not->toContain('_Claude-maintained — append immediately');
+    expect($bashPatched)->toContain("This project's bug ID convention");
+    expect($bashPatched)->toBe($phpPatched);
+
+    shell_exec('rm -rf '.escapeshellarg($syntheticRoot).' '.escapeshellarg($phpTarget));
+});
+
+it('auto-replaces a reworded HTML comment block, leaving real bug entries alone, matching Doctor.php byte for byte', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+
+    $bugsPath = $this->tempDir.'/docs/BUGS.md';
+    $reworded = str_replace(
+        '<!-- Move here when resolved, then to docs/BUGS_ARCHIVE.md as soon as the fix is verified — do not let this section accumulate -->',
+        "<!-- Move here when resolved. Include fix summary and covering test. -->\n<!-- When this section exceeds 20 entries, archive oldest to docs/BUGS_ARCHIVE.md -->",
+        file_get_contents($bugsPath)
+    );
+    $reworded .= "\n### BUG-1 — Something real ✓\n- **Fixed:** 2026-01-01\n- **Fix:** did the thing\n- **Covered by:** SomeTest\n";
+    file_put_contents($bugsPath, $reworded);
+
+    $check = runDoctorSh($this->tempDir);
+    expect($check['output'])->toContain('[FIXABLE]  missing-template-updates docs/BUGS.md');
+
+    $phpTarget = $this->tempDir.'-php-copy';
+    shell_exec('cp -r '.escapeshellarg($this->tempDir).' '.escapeshellarg($phpTarget));
+    (new Doctor)->fix($this->mapAiDir.'/stubs', $phpTarget);
+    $phpPatched = file_get_contents($phpTarget.'/docs/BUGS.md');
+
+    runDoctorSh($this->tempDir, fix: true);
+    $bashPatched = file_get_contents($bugsPath);
+
+    expect($bashPatched)->toContain('<!-- Move here when resolved, then to docs/BUGS_ARCHIVE.md as soon as the fix is verified — do not let this section accumulate -->');
+    expect($bashPatched)->not->toContain('When this section exceeds 20 entries');
+    expect($bashPatched)->toContain('BUG-1 — Something real ✓');
+    expect($bashPatched)->toBe($phpPatched);
+
+    shell_exec('rm -rf '.escapeshellarg($phpTarget));
+});
+
+it('auto-replaces a reworded inline trailing comment inside a fenced code block, matching Doctor.php byte for byte', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+
+    $setupPath = $this->tempDir.'/docs/SETUP.md';
+    $reworded = str_replace(
+        'cp docs/memory/framework.example.md docs/memory/[stack].md    # e.g. laravel.md; then update [stack].md ref in docs/MEMORY.md',
+        'cp docs/memory/framework.example.md docs/memory/[stack].md    # e.g. laravel.md; then update [stack].md ref in AGENTS.md and docs/MEMORY.md',
+        file_get_contents($setupPath)
+    );
+    file_put_contents($setupPath, $reworded);
+
+    $check = runDoctorSh($this->tempDir);
+    expect($check['output'])->toContain('[FIXABLE]  missing-template-updates docs/SETUP.md');
+
+    $phpTarget = $this->tempDir.'-php-copy';
+    shell_exec('cp -r '.escapeshellarg($this->tempDir).' '.escapeshellarg($phpTarget));
+    (new Doctor)->fix($this->mapAiDir.'/stubs', $phpTarget);
+    $phpPatched = file_get_contents($phpTarget.'/docs/SETUP.md');
+
+    runDoctorSh($this->tempDir, fix: true);
+    $bashPatched = file_get_contents($setupPath);
+
+    expect($bashPatched)->toContain('cp docs/memory/framework.example.md docs/memory/[stack].md    # e.g. laravel.md; then update [stack].md ref in docs/MEMORY.md');
+    expect($bashPatched)->not->toContain('ref in AGENTS.md and docs/MEMORY.md');
+    expect($bashPatched)->toBe($phpPatched);
+
+    shell_exec('rm -rf '.escapeshellarg($phpTarget));
+});
+
+it('does not auto-replace a trailing # reference outside a fenced code block', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+
+    $glossaryPath = $this->tempDir.'/docs/GLOSSARY.md';
+    file_put_contents(
+        $glossaryPath,
+        file_get_contents($glossaryPath)."\nSee tracking discussion #123 for context\n"
+    );
+
+    $syntheticRoot = $this->tempDir.'-maproot';
+    mkdir($syntheticRoot.'/stubs', 0755, true);
+    foreach (['doctor.sh', 'install.sh', 'lib.sh'] as $script) {
+        copy($this->mapAiDir.'/'.$script, $syntheticRoot.'/'.$script);
+    }
+    $source = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator(Installer::stubsPath(), RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST
+    );
+    foreach ($source as $item) {
+        $dest = $syntheticRoot.'/stubs/'.$source->getSubPathName();
+        $item->isDir() ? mkdir($dest, 0755, true) : copy($item->getPathname(), $dest);
+    }
+    file_put_contents(
+        $syntheticRoot.'/stubs/docs/GLOSSARY.md',
+        str_replace(
+            'See tracking discussion #123 for context',
+            'See tracking discussion #124 for context',
+            file_get_contents($glossaryPath)
+        )
+    );
+
+    $check = runDoctorSh($this->tempDir, mapAiDir: $syntheticRoot);
+    expect($check['output'])->toContain('[REVIEW]   outdated-scaffold-file  docs/GLOSSARY.md');
+    expect($check['output'])->not->toContain('[FIXABLE]  missing-template-updates docs/GLOSSARY.md');
+
+    runDoctorSh($this->tempDir, fix: true, mapAiDir: $syntheticRoot);
+    expect(file_get_contents($glossaryPath))->toContain('#123');
+
+    shell_exec('rm -rf '.escapeshellarg($syntheticRoot));
 });

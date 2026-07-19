@@ -149,7 +149,7 @@ Never regenerate an existing project's `AGENTS.md` (or any other `SCAFFOLD_FILES
 
 ### Doctor — checking and repairing drift automatically
 
-The `Doctor` class automates the "what's missing or stale" half of the guidance above, with a hard rule of its own: `fix()` only ever adds content, never removes or rewrites a line a developer could have written.
+The `Doctor` class automates the "what's missing or stale" half of the guidance above. Its governing principle: **the stub's instructional wording is always authoritative** — `fix()` will freely add missing content and replace a project's stale instructional text with the stub's current version. What it will never do is touch, drop, or reinterpret a line that's real project content, not template instructions — those are always left for a human, even when they clearly differ from the stub.
 
 ```php
 use larablocks\MapAi\Doctor;
@@ -161,25 +161,34 @@ $doctor = new Doctor;
 $findings = $doctor->check(Installer::stubsPath(), '/path/to/project');
 
 // Applies only the fixable: true findings from check(). Safe to run unattended
-// or wire into CI — it never touches an existing customized file.
+// or wire into CI — it never touches real project content.
 $applied = $doctor->fix(Installer::stubsPath(), '/path/to/project');
 ```
 
-`check()` reports two kinds of findings:
+`check()` reports these findings:
 
 | `fixable` | Finding | What it means |
 |---|---|---|
 | `true` | `missing-file` | A `MANAGED_FILES`/`SCAFFOLD_FILES` entry doesn't exist in the project yet |
+| `true` | `missing-template-updates` | A `SCAFFOLD_FILES` entry has new stub content the project doesn't have yet, and/or a stale italic note, HTML-comment block, or fenced-code trailing comment the stub has since reworded — all safe to take from the stub as-is |
 | `true` | `copilot-out-of-sync` (safe case) | `.github/copilot-instructions.md` is stale, but regenerating it from the project's own `AGENTS.md`/`security.md`/`testing.md` would only add or reorder lines already present in those source files |
-| `false` | `outdated-scaffold-file` | A `SCAFFOLD_FILES` entry exists but differs from the current stub — real content, needs a human diff and merge |
+| `false` | `outdated-scaffold-file` | A `SCAFFOLD_FILES` entry differs from the stub in a way that isn't a pure addition or a safe note/comment swap — likely real project content, needs a human diff and merge |
 | `false` | `agents-md-too-long` | `AGENTS.md` is over the 100-line cap — which sections to cut is a judgment call |
 | `false` | `copilot-out-of-sync` (unsafe case) | Regenerating `.github/copilot-instructions.md` would drop a line currently in the file — likely a hand edit, or content since removed upstream |
 
-`fix()` applies the `true` rows only: it copies in missing files (via `Installer::install(force: false)`, so existing `SCAFFOLD_FILES` are never touched and only `MANAGED_FILES` re-sync), fills in missing `.gitignore`/`.gitattributes` entries, and regenerates `.github/copilot-instructions.md` — but only when that regeneration is a strict superset of what's already there.
+`fix()` applies the `true` rows only: it copies in missing files (via `Installer::install(force: false)`, so `MANAGED_FILES` re-sync and missing `SCAFFOLD_FILES` are added), fills in missing `.gitignore`/`.gitattributes` entries, patches in new stub content and reworded instructional notes into existing `SCAFFOLD_FILES`, and regenerates `.github/copilot-instructions.md` when that's a strict superset of what's already there.
+
+The "is this safe to replace" line is drawn narrowly and mechanically, not by guessing what's "important": a hunk is only ever auto-applied when it's either a pure addition (nothing removed from the project's version), or a modification that's entirely one of three instructional conventions:
+
+- **A full-line italic note** (`_like this_`) on both sides.
+- **A complete HTML comment block** (`<!-- ... -->`, possibly spanning several lines) on both sides.
+- **A single-line change inside a fenced code block** where only the trailing `  # comment` differs — the real command before it must be byte-identical on both sides. This one is scoped to fenced code specifically: `#` has no reserved meaning in prose (e.g. `See issue #123`), so outside a code fence a matching prefix isn't a reliable signal and the change is left for a human.
+
+Real content (bug entries, schema tables, decision records, filled-in commands) is never written in any of these three forms, so all three are safe to always take from the stub. Anything else — prose bullets, headings, arbitrary reworded lines, or a comment change outside a fence — is exactly the shape real project content also takes, so it's left for a human every time.
 
 ### `doctor.sh` — the same checks, no PHP required
 
-`doctor.sh` is a standalone bash port of `Doctor` with identical behavior — same findings, same additive-only `--fix` guarantee, verified byte-for-byte against `Doctor::regenerateCopilotInstructions()` for the `.github/copilot-instructions.md` case. It exists because the MAP convention itself is language-agnostic (it installs into any project via `install.sh`, PHP or not — see [Any other PHP project](#any-other-php-project) above, which works the same way for non-PHP projects too), but the PHP `Doctor` class only helps if PHP happens to be present. `doctor.sh` doesn't have that requirement — it needs nothing but bash, matching `install.sh`'s own zero-runtime-dependency design.
+`doctor.sh` is a standalone bash port of `Doctor` with identical behavior — same findings, same fix-only-what's-safe guarantee, verified byte-for-byte against the PHP implementation for both the `.github/copilot-instructions.md` regeneration case and the general instructional-note-patching case. It exists because the MAP convention itself is language-agnostic (it installs into any project via `install.sh`, PHP or not — see [Any other PHP project](#any-other-php-project) above, which works the same way for non-PHP projects too), but the PHP `Doctor` class only helps if PHP happens to be present. `doctor.sh` doesn't have that requirement — it needs nothing but bash, matching `install.sh`'s own zero-runtime-dependency design.
 
 ```bash
 ./doctor.sh /path/to/project           # report only — exits 1 if anything needs attention

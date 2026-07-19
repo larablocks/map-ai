@@ -139,6 +139,255 @@ fix_copilot_sync() {
 }
 
 # ---------------------------------------------------------------------------
+# SCAFFOLD_FILES patching — mirrors Doctor.php's diffAgainstStub()/patchScaffoldFile()
+# exactly: `diff --unified=0 target stub`, and a hunk with oldCount=0 is a pure
+# addition (stub has new lines with nothing removed from target — safe to splice
+# in); a hunk with oldCount>0 and newCount>0 is a modification (needs a human).
+# Content the target has that the stub doesn't produces neither and is left alone.
+# ---------------------------------------------------------------------------
+
+# True if every non-blank line in $1 is a full-line italic note (`_like this_`).
+is_all_italic_notes() {
+  local block="$1" line
+  [[ -z "$block" ]] && return 1
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^_.*_$ ]] || return 1
+  done <<< "$block"
+  return 0
+}
+
+# True if $1 (a multi-line block) is a complete HTML comment: first line starts
+# with <!-- and the last non-blank line ends with -->.
+is_html_comment_block() {
+  local block="$1"
+  [[ -z "$block" ]] && return 1
+  local first last
+  first="$(head -n1 <<< "$block")"
+  last="$(printf '%s' "$block" | awk 'NF{l=$0} END{print l}')"
+  [[ "$first" == '<!--'* && "$last" == *'-->' ]]
+}
+
+# Every stub file uses full-line italic notes and HTML comments for its own
+# instructional/governance text, never for real content (bug entries, schema
+# tables, decision records). A modification hunk is safe to auto-apply only
+# when both sides are entirely one of those two conventions.
+is_safe_note_modification() {
+  local removed="$1" added="$2"
+  [[ -z "$removed" || -z "$added" ]] && return 1
+
+  if is_all_italic_notes "$removed" && is_all_italic_notes "$added"; then
+    return 0
+  fi
+
+  is_html_comment_block "$removed" && is_html_comment_block "$added"
+}
+
+# Prints everything before a whitespace-preceded # to stdout and returns 0, or
+# returns 1 if $1 has no such trailing comment. `#` has no reserved meaning in
+# prose, so callers must scope this to fenced code lines themselves.
+inline_comment_prefix() {
+  local line="$1"
+  line="${line%"${line##*[![:space:]]}"}" # rtrim
+  if [[ "$line" =~ ^(.*[^[:space:]])[[:space:]]+#.*$ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+
+# Safe only when both lines have a trailing "  # comment" and the real content
+# before it is byte-identical — i.e. only the comment changed.
+is_safe_inline_comment_modification() {
+  local removed_prefix added_prefix
+  removed_prefix="$(inline_comment_prefix "$1")" || return 1
+  added_prefix="$(inline_comment_prefix "$2")" || return 1
+  [[ "$removed_prefix" == "$added_prefix" ]]
+}
+
+# Sets FENCE_LINES to a newline-separated list of 1-indexed line numbers of $1
+# that fall inside a ``` fence.
+compute_fence_lines() {
+  local file="$1"
+  FENCE_LINES=$'\n'
+  local in_fence=0 lineno=0 line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+    if [[ "$line" == '```'* ]]; then
+      in_fence=$((1 - in_fence))
+      continue
+    fi
+    [[ "$in_fence" -eq 1 ]] && FENCE_LINES+="${lineno}"$'\n'
+  done < "$file"
+}
+
+is_fenced_line() {
+  [[ "$FENCE_LINES" == *$'\n'"$1"$'\n'* ]]
+}
+
+# Sets SCAFFOLD_HAS_ADDITIONS and SCAFFOLD_HAS_MODIFICATIONS (0/1) for $1 vs $2.
+# ADDITIONS covers pure insertions and safe note/comment replacements — all
+# auto-appliable; MODIFICATIONS means real content changed and needs a human.
+classify_scaffold_diff() {
+  local target="$1" stub="$2"
+  SCAFFOLD_HAS_ADDITIONS=0
+  SCAFFOLD_HAS_MODIFICATIONS=0
+  [[ -f "$target" && -f "$stub" ]] || return 1
+
+  compute_fence_lines "$target"
+
+  local diff_output old_start old_count new_count removed added in_hunk=0
+  diff_output="$(diff --unified=0 "$target" "$stub" 2>/dev/null || true)"
+
+  eval_hunk() {
+    [[ "$in_hunk" -ne 1 ]] && return
+    if [[ "$old_count" -eq 0 && "$new_count" -gt 0 ]]; then
+      SCAFFOLD_HAS_ADDITIONS=1
+    elif [[ "$old_count" -gt 0 && "$new_count" -gt 0 ]]; then
+      local is_inline_comment=1
+      if [[ "$old_count" -eq 1 && "$new_count" -eq 1 ]] && is_fenced_line "$old_start"; then
+        is_safe_inline_comment_modification "$removed" "$added" && is_inline_comment=0
+      fi
+      if is_safe_note_modification "$removed" "$added" || [[ "$is_inline_comment" -eq 0 ]]; then
+        SCAFFOLD_HAS_ADDITIONS=1
+      else
+        SCAFFOLD_HAS_MODIFICATIONS=1
+      fi
+    fi
+  }
+
+  local next_old_start next_old_count next_new_count
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^@@\ -([0-9]+)(,([0-9]+))?\ \+[0-9]+(,([0-9]+))?\ @@ ]]; then
+      # Capture this header's groups before eval_hunk runs — it calls
+      # is_safe_note_modification, whose own =~ matches overwrite BASH_REMATCH.
+      next_old_start="${BASH_REMATCH[1]}"
+      next_old_count="${BASH_REMATCH[3]:-1}"
+      next_new_count="${BASH_REMATCH[5]:-1}"
+      eval_hunk
+      old_start="$next_old_start"
+      old_count="$next_old_count"
+      new_count="$next_new_count"
+      removed=""
+      added=""
+      in_hunk=1
+      continue
+    fi
+    if [[ "$in_hunk" -eq 1 ]]; then
+      if [[ "$line" == '+'* ]]; then
+        added+="${line:1}"$'\n'
+      elif [[ "$line" == '-'* ]]; then
+        removed+="${line:1}"$'\n'
+      fi
+    fi
+  done <<< "$diff_output"
+  eval_hunk
+}
+
+# Splices only the appliable hunks from $1 (target) vs $2 (stub) into $1, in
+# place. Returns 1 (no-op) if there's nothing to patch.
+patch_scaffold_file() {
+  local target="$1" stub="$2"
+  [[ -f "$target" && -f "$stub" ]] || return 1
+
+  compute_fence_lines "$target"
+
+  local diff_output
+  diff_output="$(diff --unified=0 "$target" "$stub" 2>/dev/null || true)"
+  [[ -z "$diff_output" ]] && return 1
+
+  local hunk_starts=() hunk_counts=() hunk_bodies=()
+  local old_start="" old_count=1 new_count=1 removed="" added="" in_hunk=0
+
+  save_hunk() {
+    [[ "$in_hunk" -ne 1 ]] && return
+    if [[ "$old_count" -eq 0 && "$new_count" -gt 0 ]]; then
+      hunk_starts+=("$old_start")
+      hunk_counts+=(0)
+      hunk_bodies+=("$added")
+      return
+    fi
+    [[ "$old_count" -eq 0 || "$new_count" -eq 0 ]] && return
+
+    local safe=1
+    is_safe_note_modification "$removed" "$added" && safe=0
+    if [[ "$safe" -ne 0 && "$old_count" -eq 1 && "$new_count" -eq 1 ]] && is_fenced_line "$old_start"; then
+      is_safe_inline_comment_modification "$removed" "$added" && safe=0
+    fi
+
+    if [[ "$safe" -eq 0 ]]; then
+      hunk_starts+=("$((old_start - 1))")
+      hunk_counts+=("$old_count")
+      hunk_bodies+=("$added")
+    fi
+  }
+
+  local next_old_start next_old_count next_new_count
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^@@\ -([0-9]+)(,([0-9]+))?\ \+[0-9]+(,([0-9]+))?\ @@ ]]; then
+      # Capture this header's groups before save_hunk runs — it calls
+      # is_safe_note_modification, whose own =~ matches overwrite BASH_REMATCH.
+      next_old_start="${BASH_REMATCH[1]}"
+      next_old_count="${BASH_REMATCH[3]:-1}"
+      next_new_count="${BASH_REMATCH[5]:-1}"
+      save_hunk
+      old_start="$next_old_start"
+      old_count="$next_old_count"
+      new_count="$next_new_count"
+      removed=""
+      added=""
+      in_hunk=1
+      continue
+    fi
+    if [[ "$in_hunk" -eq 1 ]]; then
+      if [[ "$line" == '+'* ]]; then
+        added+="${line:1}"$'\n'
+      elif [[ "$line" == '-'* ]]; then
+        removed+="${line:1}"$'\n'
+      fi
+    fi
+  done <<< "$diff_output"
+  save_hunk
+
+  [[ ${#hunk_starts[@]} -eq 0 ]] && return 1
+
+  # Order hunks by start descending (bottom-to-top) so an earlier splice
+  # doesn't shift the line numbers a later one depends on. Insertion sort —
+  # the hunk count per file is always small.
+  local order=()
+  local i j key
+  for ((i = 0; i < ${#hunk_starts[@]}; i++)); do order+=("$i"); done
+  for ((i = 1; i < ${#order[@]}; i++)); do
+    key=${order[i]}
+    j=$((i - 1))
+    while ((j >= 0)) && ((hunk_starts[${order[j]}] < hunk_starts[key])); do
+      order[j + 1]=${order[j]}
+      ((j--))
+    done
+    order[j + 1]=$key
+  done
+
+  local file_lines=()
+  mapfile -t file_lines < "$target"
+
+  local idx start cnt add_body add_lines
+  for idx in "${order[@]}"; do
+    start=${hunk_starts[$idx]}
+    cnt=${hunk_counts[$idx]}
+    add_body=${hunk_bodies[$idx]}
+    add_lines=()
+    mapfile -t add_lines <<< "$add_body"
+    if [[ ${#add_lines[@]} -gt 0 && -z "${add_lines[-1]}" ]]; then
+      unset 'add_lines[-1]'
+    fi
+    file_lines=("${file_lines[@]:0:$start}" "${add_lines[@]}" "${file_lines[@]:$((start + cnt))}")
+  done
+
+  printf '%s\n' "${file_lines[@]}" > "$target"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # Apply fixes first (if --fix), then always run the check pass below to
 # report what's left — including confirmation that the fixable items are
 # gone, and anything that still needs a human.
@@ -151,6 +400,14 @@ if [[ "$FIX" -eq 1 ]]; then
   # added, existing ones are left untouched.
   bash "$SCRIPT_DIR/install.sh" "$TARGET"
   echo ""
+  # Patch in new template content before regenerating copilot-instructions.md, so
+  # the regeneration reflects whatever AGENTS.md just picked up.
+  for file in "${SCAFFOLD_FILES[@]}"; do
+    [[ "$file" == ".github/copilot-instructions.md" ]] && continue
+    if patch_scaffold_file "$TARGET/$file" "$SCRIPT_DIR/stubs/$file"; then
+      echo "  [FIXED]  $file patched with new template content"
+    fi
+  done
   if fix_copilot_sync; then
     echo "  [FIXED]  .github/copilot-instructions.md regenerated"
   fi
@@ -171,10 +428,15 @@ for file in "${MANAGED_FILES[@]}" "${SCAFFOLD_FILES[@]}"; do
 done
 
 for file in "${SCAFFOLD_FILES[@]}"; do
+  [[ "$file" == ".github/copilot-instructions.md" ]] && continue
   src="$SCRIPT_DIR/stubs/$file"
   dst="$TARGET/$file"
-  [[ -f "$src" && -f "$dst" ]] || continue
-  if ! cmp -s "$src" "$dst"; then
+  classify_scaffold_diff "$dst" "$src" || continue
+  if [[ "$SCAFFOLD_HAS_ADDITIONS" -eq 1 ]]; then
+    echo "  [FIXABLE]  missing-template-updates $file  (has new template content — safe to patch in)"
+    ((FIXABLE_FOUND++)) || true
+  fi
+  if [[ "$SCAFFOLD_HAS_MODIFICATIONS" -eq 1 ]]; then
     echo "  [REVIEW]   outdated-scaffold-file  $file  (differs from the current stub — merge by hand)"
     ((REVIEW_FOUND++)) || true
   fi

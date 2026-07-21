@@ -23,6 +23,7 @@ class Installer
 
     /** Framework-owned files — always kept in sync with the package stubs, never backed up. */
     public const MANAGED_FILES = [
+        '.claude/hooks/map-first-run-check.sh',
         '.cursor/rules/agents.mdc',
         'docs/MEMORY.example.md',
         'docs/agents/agent.example.md',
@@ -46,6 +47,13 @@ class Installer
      * .claude/rules/*.md carry an additional, separate restriction: AGENTS.md's own Hard
      * rule requires explicit developer instruction before Claude edits them directly,
      * regardless of this installer's SCAFFOLD/MANAGED categorization.
+     *
+     * .claude/settings.json is deliberately excluded from this list — it's copied
+     * ad hoc by install() below (same copy-if-absent semantics) instead of being
+     * enumerated here, because this repo's own root .claude/settings.json is Eric's
+     * real Claude Code config for developing this package, not a template mirror,
+     * and the "root template files match stubs" test asserts byte-parity for
+     * every file in SCAFFOLD_FILES/MANAGED_FILES.
      */
     public const SCAFFOLD_FILES = [
         'AGENTS.md',
@@ -136,7 +144,8 @@ class Installer
      * @return array{
      *     files: list<array{action: 'copy'|'update'|'skip'|'identical'|'missing'|'symlink', file: string, backed_up: bool}>,
      *     gitignore: 'updated'|'skipped',
-     *     gitattributes: 'updated'|'skipped'
+     *     gitattributes: 'updated'|'skipped',
+     *     claudeSettings: array{action: 'copy'|'update'|'skip'|'identical'|'missing'|'symlink', file: string, backed_up: bool}
      * }
      */
     public function install(string $stubsPath, string $targetPath, bool $force = false, ?callable $progress = null): array
@@ -159,10 +168,17 @@ class Installer
             }
         }
 
+        // Not part of SCAFFOLD_FILES — see that constant's docblock for why. Same
+        // copy-if-absent-else-skip semantics, just not enumerated or diffed like
+        // the rest of the scaffold, since a target may already have this file
+        // populated with unrelated hooks/permissions this installer must not clobber.
+        $claudeSettings = $this->copyFile($stubsPath, $targetPath, '.claude/settings.json', force: $force, backup: true);
+
         return [
             'files' => $files,
             'gitignore' => $this->mergeGitignore($targetPath),
             'gitattributes' => $this->mergeGitattributes($targetPath),
+            'claudeSettings' => $claudeSettings,
         ];
     }
 
@@ -233,6 +249,13 @@ class Installer
         }
 
         copy($src, $dst);
+
+        // copy() doesn't preserve the source's permission bits (e.g. the executable
+        // bit on .claude/hooks/*.sh) — the destination gets PHP's default mode instead.
+        $sourcePerms = fileperms($src);
+        if ($sourcePerms !== false) {
+            chmod($dst, $sourcePerms & 0777);
+        }
 
         return ['action' => $action, 'file' => $file, 'backed_up' => $action === 'update' && $backup];
     }

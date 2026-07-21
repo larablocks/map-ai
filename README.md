@@ -100,9 +100,13 @@ The result: sessions start faster because the AI isn't loading irrelevant contex
 
 ## Installation
 
-MAP installs via [Composer](https://getcomposer.org), the standard dependency manager for PHP — it isn't Laravel-specific, it's used across the PHP ecosystem (Laravel, Symfony, WordPress, Drupal, Slim, plain PHP). This package requires **PHP 8.2+** and has no other dependencies, so it can be required into any Composer-managed PHP project regardless of framework.
+Pick the package for your stack — each one wraps this core package (the stub files plus the shared install/patch logic) in a one-command install with stack-aware auto-detection baked in: project name, framework, and test/build/start commands get read straight from your project's own manifest and written into `AGENTS.md`, rather than left as `[...]` placeholders. **Prefer these over installing this package directly** — the platform wrapper is strictly the better experience, and none of them reimplement MAP's diff/patch logic, they all call this package's `install.sh`/`doctor.sh` (or the PHP `Installer`/`Doctor` classes) underneath.
 
-This repo (`larablocks/map-ai`) is the framework-agnostic core: the stub files and the `Installer` class. It's a dependency, not something most projects require directly — install it through a framework package that wraps it in a one-command install experience.
+| Stack | Package | Install |
+|---|---|---|
+| Laravel | [`map-ai-laravel`](https://github.com/larablocks/map-ai-laravel) | `composer require larablocks/map-ai-laravel && php artisan map:install` |
+| React, Vue, Next.js, Nuxt, Angular, plain Node/TypeScript | [`map-ai-js`](https://github.com/larablocks/map-ai-js) | `npx map-ai-js install` |
+| Django, Flask, FastAPI, plain Python | [`map-ai-py`](https://github.com/larablocks/map-ai-py) | `pipx run map-ai-py install` (or `uvx map-ai-py install`) |
 
 ### Laravel
 
@@ -111,15 +115,33 @@ composer require larablocks/map-ai-laravel
 php artisan map:install
 ```
 
-`map:install` copies the scaffold into your project root (see [What gets installed](#what-gets-installed) below) and merges the required entries into `.gitignore`/`.gitattributes`. Files that already exist are left alone unless you pass `--force`, which overwrites `SCAFFOLD_FILES` after backing each one up to `<file>.bak`.
+`map:install` copies the scaffold into your project root (see [What gets installed](#what-gets-installed) below), merges the required entries into `.gitignore`/`.gitattributes`, and auto-detects project name/stack/commands from `composer.json`/`package.json`/`.env.example` to fill in `AGENTS.md`. Files that already exist are left alone unless you pass `--force`, which overwrites `SCAFFOLD_FILES` after backing each one up to `<file>.bak`.
 
 ```bash
 php artisan map:install --force
 ```
 
+### React, Vue, Next.js, Nuxt, Angular, or plain Node/TypeScript
+
+```bash
+npx map-ai-js install
+```
+
+Same install behavior as Laravel's, with auto-detection reading `package.json` instead — recognizes Next.js, Nuxt, SvelteKit, Remix, Astro, Angular, NestJS, React, Vue, Svelte, Fastify, and Express, plus TypeScript/JavaScript and common data-layer dependencies (Drizzle, Prisma, MongoDB, Postgres, MySQL, SQLite, Redis). See [`map-ai-js`'s README](https://github.com/larablocks/map-ai-js) for the full detection table and `doctor` usage.
+
+### Django, Flask, FastAPI, or plain Python
+
+```bash
+pipx run map-ai-py install
+# or
+uvx map-ai-py install
+```
+
+Same behavior again, reading `pyproject.toml` (or `requirements.txt` as a fallback). Start/build command detection is intentionally weaker than the JS/PHP versions — Python has no `package.json`-scripts equivalent, so those two fall back to a `[MANUAL]` placeholder more often; everything else detects the same way. See [`map-ai-py`'s README](https://github.com/larablocks/map-ai-py) for specifics.
+
 ### Any other PHP project
 
-No framework-specific wrapper exists yet outside Laravel. Require this package directly and run the installer script that ships with it:
+No dedicated wrapper exists yet for Symfony, WordPress, or other non-Laravel PHP frameworks. Require this package directly and run the installer script that ships with it:
 
 ```bash
 composer require larablocks/map-ai
@@ -130,14 +152,28 @@ Add `--force` to the end of that command to overwrite existing `SCAFFOLD_FILES` 
 
 Prefer to drive it from PHP instead of the shell? Call the `Installer` class directly — see [For package authors](#for-package-authors) below for the exact API.
 
+### Any other stack entirely
+
+`install.sh`/`doctor.sh` need nothing but `bash` — no PHP, Node, or Python required to run them. Clone this repo and point them at your project directly:
+
+```bash
+git clone https://github.com/larablocks/map-ai.git /tmp/map-ai
+bash /tmp/map-ai/install.sh /path/to/your/project
+```
+
+If you're doing this for more than one project in your ecosystem, it's worth building a proper wrapper instead — see [Want a wrapper for another framework?](#want-a-wrapper-for-another-framework) below.
+
 ### After installing
 
 1. Review `AGENTS.md` — fill in any remaining `[...]` placeholders (project name, stack, commands) that couldn't be auto-detected.
-2. `install.sh` already bootstrapped each developer's gitignored `docs/memory/*.md` files from their `.example.md` counterpart (see `docs/SETUP.md` step 3 for the manual `cp` commands, only needed to review/edit one before first use, or to run the stack-specific `framework.example.md` rename — that one file is never auto-bootstrapped, since the target filename is project-specific).
+2. Installing already bootstrapped each developer's gitignored `docs/memory/*.md` files from their `.example.md` counterpart (see `docs/SETUP.md` step 3 for the manual `cp` commands, only needed to review/edit one before first use, or to run the stack-specific `framework.example.md` rename — that one file is never auto-bootstrapped, since the target filename is project-specific).
 
 ### Want a wrapper for another framework?
 
-Build a thin package the same way `map-ai-laravel` does — require this core package and call `Installer::install()` (or shell out to `install.sh`) from your framework's own install command. See [For package authors](#for-package-authors).
+Two patterns, depending on your ecosystem:
+
+- **PHP frameworks** (Symfony, WordPress, etc.): require this core package and call `Installer::install()` directly, the same way `map-ai-laravel` does. See [For package authors](#for-package-authors) below for the exact API.
+- **Everything else**: vendor a copy of `install.sh`/`doctor.sh`/`lib.sh`/`stubs/` from this repo into your package and shell out to them, rather than porting the diff/patch logic to another language — the same approach [`map-ai-js`](https://github.com/larablocks/map-ai-js) and [`map-ai-py`](https://github.com/larablocks/map-ai-py) both use. Add only what's genuinely native to your ecosystem: reading its manifest format (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, whatever's standard) to auto-fill `AGENTS.md`'s placeholders. Both of those packages' `src/detect.js`/`detect.py` are a reasonable reference for the shape that takes.
 
 ---
 
@@ -294,11 +330,12 @@ Two more `Installer` methods round out the API:
 
 // Reports which SCAFFOLD_FILES exist in the project but differ from the current stub —
 // useful for a standalone "your docs are behind the template" check without writing
-// anything. (map-ai-laravel's map:diff command currently does its own file-by-file diff
-// rather than calling this, but the check is equivalent.)
+// anything.
 (new Installer)->scaffoldOutOfDate(stubsPath: Installer::stubsPath(), targetPath: '/path/to/project');
 // Returns a list<string> of relative file paths.
 ```
+
+For anything more than a yes/no "is it out of date" check — classifying *what kind* of drift each file has, or safely patching in just the safe parts — use `Doctor` instead of `scaffoldOutOfDate()` directly; see [Doctor — checking and repairing drift automatically](#doctor--checking-and-repairing-drift-automatically) above. `map-ai-laravel`'s `map:install`/`map:diff` commands are built on `Doctor::check()`/`fixableHunks()`/`applyHunks()`, not this method.
 
 ## Development
 

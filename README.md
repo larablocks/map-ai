@@ -179,20 +179,43 @@ Two patterns, depending on your ecosystem:
 
 ## Merging MAP docs
 
-MAP docs are edited on every branch, so they conflict on merge more than most files — usually in boring ways: both branches appended an entry at the end of a log, both added a row to the same table, both bumped `Last updated`, or both picked the same next `BUG-N`. MAP ships a git merge driver, `.map/merge.sh`, that resolves exactly those cases and leaves everything else to you.
+MAP docs are edited on every branch, so they conflict on merge more than most files. MAP ships a git merge driver, `.map/merge.sh`, and `.gitattributes` routes every file an AI agent writes to through it: all of `docs/` (including the `agents|api|architecture|integrations|qa/` folders and `docs/memory/shared.md`), plus `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, and `.claude/rules/*.md`.
 
-`.gitattributes` routes the Claude-maintained docs to it (`docs/BUGS.md merge=map-ai`, and likewise `BUGS_ARCHIVE.md`, `ARCHITECTURE_HISTORY.md`, `METRICS_HISTORY.md`, `STATUS.md`, `ARCHITECTURE.md`, `CODE_PATTERNS.md`, `COMMANDS.md`, `FEATURE_FLAGS.md`, `GLOSSARY.md`, `SCHEMA.md`, `TESTING_COVERAGE.md`, `docs/memory/shared.md`, and the `docs/agents|api|architecture|integrations|qa/` folders). Human-authored docs — `DESIGN.md`, `DOCKER.md`, `SETUP.md`, `COMPLIANCE.md` — stay on git's normal merge.
+Each conflicting file goes through up to three passes. Each pass only touches what the one before couldn't settle:
 
-How it resolves a file:
+1. **Git's own merge.** If git merges the file cleanly, that result is used unchanged. The only addition is renumbering duplicate `BUG-N`s, below.
+2. **Deterministic rules.** Each side is split into blocks at markdown headings (headings inside code fences and HTML comments don't count) and merged block by block:
+   - two new entries under different headings are both kept, ours first;
+   - an entry deleted on one side and untouched on the other stays deleted, so a bug moved to `BUGS_ARCHIVE.md` doesn't come back.
 
-1. **Git's own merge first.** If git merges the file cleanly, that result is used unchanged. The driver never alters a merge git would have made on its own (apart from renumbering duplicate `BUG-N`s, below).
-2. **Block-by-block on conflict.** Each side is split into blocks at markdown headings (headings inside code fences and HTML comments don't count) and merged block by block, so two new entries under different headings are both kept — ours first, then theirs. An entry deleted on one side and untouched on the other stays deleted (a bug moved to `BUGS_ARCHIVE.md` doesn't come back).
-3. **Only safe shapes inside a block.** Where both sides changed the same block, it resolves only: table rows (3-way merged by their first cell), pure insertions on both sides (ours, then theirs), and a `Last updated` line (newest date wins).
-4. **Duplicate `BUG-N`.** In `BUGS.md` / `BUGS_ARCHIVE.md`, if both branches used the same number, the entry already on your side keeps it and the other is renumbered to the next free number across both files and both branches. The merge prints what it renumbered so references in `docs/qa/` can be fixed.
+   Inside a block both sides changed, it resolves table rows (3-way by their first cell), pure insertions on both sides (ours, then theirs), and `Last updated` lines (newest date wins). Everything the rules settle is kept, and conflict markers remain only around what they couldn't. If nothing is left, the merge completes as normal.
+3. **Claude, for the rest.** Each remaining conflict goes to Claude (`claude -p`, no tools, run outside the project so its `CLAUDE.md` and hooks don't load). Claude sees base, ours and theirs, the surrounding lines, the file's own header rules, and the commit subjects from both branches.
 
-Anything else — the same line of prose rewritten on both sides, an entry edited on one side and deleted on the other — is a real conflict: the driver exits non-zero and leaves git's normal conflict markers.
+   A resolution is accepted only if all of these hold:
+   - it has no conflict markers;
+   - every heading, table-row key and dated entry from both sides is still there, unless one side deliberately deleted it relative to base;
+   - it adds no heading neither side had.
 
-The driver is plain bash and POSIX awk (stock macOS bash 3.2 works) with no LLM involved. `.gitattributes` is committed, but the driver's registration lives in `.git/config`, which a clone never copies — so it's registered per clone by `install.sh`, `doctor --fix`/`Doctor::fix()`, `map:install`, and silently by the SessionStart hook on a clone's first Claude Code session. `doctor` reports `merge-driver-not-registered` when it's missing. Unregistered, git just falls back to its normal text merge. Merges made on GitHub (the merge button, merge queues) never run local merge drivers.
+   Anything rejected, or marked unresolved by Claude, keeps its markers.
+
+**Nothing Claude wrote is committed unseen.** When the merge needed Claude, it always stops before committing, even if every conflict was resolved: the files have no markers but are still marked unmerged. Review with `git diff`, then `git add` and commit. `git checkout --conflict=diff3 -- <file>` restores the raw markers if you'd rather start over. Merges the rules fully resolve complete on their own.
+
+**Duplicate `BUG-N`.** In `BUGS.md` / `BUGS_ARCHIVE.md`, if both branches used the same number, the entry already on your side keeps it. The other is renumbered to the next free number across both files and both branches. The merge prints what it renumbered so references in `docs/qa/` can be fixed.
+
+**The `map-resolve` skill** (`.claude/skills/map-resolve/`) is the in-session counterpart. When a merge stops, ask Claude Code to resolve or review the conflicts. It reviews what the driver already resolved, resolves what's left itself, walks you through the diff, and only runs `git add` once you confirm. `AGENTS.md` points other tools at the same steps. `bash .map/merge.sh --resolve <file>` re-runs the driver on a file git already left conflicted, for example when the merge ran before the driver was registered.
+
+Settings, as environment variables or `git config`:
+
+| Setting | Effect |
+|---|---|
+| `MAP_MERGE_LLM=0` / `git config map-ai.llm false` | Rules only, never call Claude |
+| `MAP_MERGE_MODEL` / `git config map-ai.model` | Model for the Claude pass (defaults to your CLI's default) |
+| `MAP_MERGE_LLM_TIMEOUT` | Seconds to wait for Claude per file (default 180) |
+| `MAP_MERGE_LLM_COMMAND` / `git config map-ai.llmCommand` | Replace the Claude call entirely: prompt on stdin, reply on stdout |
+
+The Claude pass runs only where the `claude` CLI is installed and signed in. Without it, the rules still run, and the rest is left as markers for you or the `map-resolve` skill.
+
+The driver is plain bash and POSIX awk (stock macOS bash 3.2 works). `.gitattributes` is committed, but the driver's registration lives in `.git/config`, which a clone never copies. So it's registered per clone by `install.sh`, `doctor --fix`/`Doctor::fix()` and `map:install`, and silently by the SessionStart hook on a clone's first Claude Code session. `doctor` reports `merge-driver-not-registered` when it's missing. Unregistered, git just falls back to its normal text merge. Merges made on GitHub (the merge button, merge queues) never run local merge drivers.
 
 ## Upgrading an existing MAP install
 
@@ -277,6 +300,7 @@ GEMINI.md                          — Gemini CLI entry point (@AGENTS.md)
 .claude/settings.json              — registers the MAP hooks below (copied only if absent)
 .claude/hooks/map-first-run-check.sh — SessionStart: first-run check + registers the merge driver
 .claude/hooks/map-token-check.sh   — SessionStart/PostToolUse: enforces the token caps
+.claude/skills/map-resolve/SKILL.md — resolve/review MAP doc merge conflicts with Claude Code
 .map/merge.sh                      — git merge driver for MAP docs (see Merging MAP docs)
 
 docs/STATUS.md                     — project health: build, tests, blockers, milestones

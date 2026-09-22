@@ -9,8 +9,10 @@ use larablocks\MapAi\Installer;
  *
  * @return array{exit: int, result: string, stderr: string}
  */
-function runMergeDriver(string $base, string $ours, string $theirs, string $path = 'docs/STATUS.md', ?string $cwd = null): array
+function runMergeDriver(string $base, string $ours, string $theirs, string $path = 'docs/STATUS.md', ?string $cwd = null, array $env = []): array
 {
+    // Never reach a real `claude` from tests — LLM off unless a test opts in with a fake command.
+    $env = [...['PATH' => getenv('PATH'), 'HOME' => getenv('HOME'), 'MAP_MERGE_LLM' => '0'], ...$env];
     $dir = sys_get_temp_dir().'/map-ai-merge-driver-'.uniqid();
     mkdir($dir, 0755, true);
     file_put_contents("$dir/O", $base);
@@ -18,7 +20,7 @@ function runMergeDriver(string $base, string $ours, string $theirs, string $path
     file_put_contents("$dir/B", $theirs);
 
     $cmd = ['bash', Installer::stubsPath().'/.map/merge.sh', "$dir/O", "$dir/A", "$dir/B", $path];
-    $process = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $cwd ?? $dir);
+    $process = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $cwd ?? $dir, $env);
     stream_get_contents($pipes[1]);
     $stderr = stream_get_contents($pipes[2]);
     fclose($pipes[1]);
@@ -195,7 +197,7 @@ it('leaves a conflict when an entry is edited on one side and deleted on the oth
 it('resolves a real git merge end to end once installed', function () {
     $repo = sys_get_temp_dir().'/map-ai-merge-repo-'.uniqid();
     mkdir($repo, 0755, true);
-    $git = fn (string $args) => shell_exec('cd '.escapeshellarg($repo).' && git -c user.name=t -c user.email=t@t '.$args.' 2>&1');
+    $git = fn (string $args) => shell_exec('cd '.escapeshellarg($repo).' && MAP_MERGE_LLM=0 git -c user.name=t -c user.email=t@t '.$args.' 2>&1');
 
     $git('init -q -b main');
     (new Installer)->install(Installer::stubsPath(), $repo);
@@ -287,4 +289,207 @@ it('SessionStart hook registers the merge driver in a fresh clone', function () 
     expect(Installer::mergeDriverRegistered($repo))->toBeTrue();
 
     shell_exec('rm -rf '.escapeshellarg($repo));
+});
+
+/**
+ * A stand-in for `claude -p`: records the prompt it was given and replies with $reply.
+ *
+ * @return array{command: string, prompt: string, dir: string}
+ */
+function fakeClaude(string $reply, int $sleep = 0): array
+{
+    $dir = sys_get_temp_dir().'/map-ai-fake-claude-'.uniqid();
+    mkdir($dir, 0755, true);
+    file_put_contents("$dir/reply", $reply);
+    file_put_contents("$dir/fake.sh", "cat > ".escapeshellarg("$dir/prompt")."\n".($sleep ? "sleep $sleep\n" : '')."cat ".escapeshellarg("$dir/reply")."\n");
+
+    return ['command' => 'bash '.escapeshellarg("$dir/fake.sh"), 'prompt' => "$dir/prompt", 'dir' => $dir];
+}
+
+function removeDir(string $dir): void
+{
+    shell_exec('rm -rf '.escapeshellarg($dir));
+}
+
+$proseConflict = [
+    "# S\n_Last updated: 2026-01-01_\n\n## Current phase\nPhase 1\n\n## Notes\n- a\n",
+    "# S\n_Last updated: 2026-01-01_\n\n## Current phase\nPhase 2: API\n\n## Notes\n- a\n",
+    "# S\n_Last updated: 2026-01-01_\n\n## Current phase\nPhase 2: billing\n\n## Notes\n- a\n",
+];
+
+it('keeps what the rules resolved and leaves markers only around the real conflict', function () {
+    $base = "# S\n\n## Current phase\nPhase 1\n\n## Log\n### 2026-01-01\nx\n";
+    $ours = "# S\n\n## Current phase\nPhase 2 ours\n\n## Log\n### 2026-01-01\nx\n### 2026-02-01\nours entry\n";
+    $theirs = "# S\n\n## Current phase\nPhase 2 theirs\n\n## Log\n### 2026-01-01\nx\n### 2026-02-02\ntheirs entry\n";
+
+    $merge = runMergeDriver($base, $ours, $theirs);
+
+    expect($merge['exit'])->not->toBe(0);
+    expect($merge['result'])->toBe(
+        "# S\n\n## Current phase\n<<<<<<< ours\nPhase 2 ours\n||||||| base\nPhase 1\n=======\nPhase 2 theirs\n>>>>>>> theirs\n\n"
+        ."## Log\n### 2026-01-01\nx\n### 2026-02-01\nours entry\n### 2026-02-02\ntheirs entry\n"
+    );
+});
+
+it('applies a valid Claude resolution but still stops the merge for review', function () use ($proseConflict) {
+    $fake = fakeClaude("=== RESOLUTION 1 ===\nPhase 2: API and billing\n=== END ===\n");
+
+    $merge = runMergeDriver(...[...$proseConflict, 'docs/STATUS.md', null, ['MAP_MERGE_LLM' => '1', 'MAP_MERGE_LLM_COMMAND' => $fake['command']]]);
+
+    expect($merge['exit'])->not->toBe(0); // stop-for-review: never auto-completes
+    expect($merge['result'])->toBe("# S\n_Last updated: 2026-01-01_\n\n## Current phase\nPhase 2: API and billing\n\n## Notes\n- a\n");
+    expect($merge['stderr'])->toContain('Claude resolved 1 conflict(s)')->toContain('git add docs/STATUS.md');
+
+    $prompt = file_get_contents($fake['prompt']);
+    expect($prompt)
+        ->toContain('File: docs/STATUS.md')
+        ->toContain('_Last updated: 2026-01-01_')
+        ->toContain("OURS (this branch):\nPhase 2: API")
+        ->toContain("BASE (common ancestor):\nPhase 1")
+        ->toContain("THEIRS (incoming branch):\nPhase 2: billing")
+        ->toContain('=== RESOLUTION 1 ===');
+
+    removeDir($fake['dir']);
+});
+
+it('rejects a Claude resolution that drops an entry both sides kept', function () {
+    $base = "# H\n\n## Log\n| Date | Note |\n|---|---|\n| 2026-01-01 | a |\n";
+    $ours = "# H\n\n## Log\n| Date | Note |\n|---|---|\n| 2026-01-01 | a (ours) |\n| 2026-02-01 | b |\n";
+    $theirs = "# H\n\n## Log\n| Date | Note |\n|---|---|\n| 2026-01-01 | a (theirs) |\n| 2026-02-02 | c |\n";
+    $fake = fakeClaude("=== RESOLUTION 1 ===\n| 2026-01-01 | a (both) |\n| 2026-02-01 | b |\n=== END ===\n");
+
+    $merge = runMergeDriver($base, $ours, $theirs, 'docs/STATUS.md', null, ['MAP_MERGE_LLM' => '1', 'MAP_MERGE_LLM_COMMAND' => $fake['command']]);
+
+    expect($merge['exit'])->not->toBe(0);
+    expect($merge['result'])->toContain('<<<<<<< ours')->toContain('| 2026-02-02 | c |');
+    expect($merge['stderr'])->toContain('conflict(s) left');
+
+    removeDir($fake['dir']);
+});
+
+it('rejects a Claude resolution that invents a heading', function () use ($proseConflict) {
+    $fake = fakeClaude("=== RESOLUTION 1 ===\nPhase 2\n### Made-up section\n=== END ===\n");
+
+    $merge = runMergeDriver(...[...$proseConflict, 'docs/STATUS.md', null, ['MAP_MERGE_LLM' => '1', 'MAP_MERGE_LLM_COMMAND' => $fake['command']]]);
+
+    expect($merge['result'])->toContain('<<<<<<< ours')->not->toContain('Made-up section');
+
+    removeDir($fake['dir']);
+});
+
+it('leaves markers when Claude marks a conflict unresolved or replies with markers', function () use ($proseConflict) {
+    foreach (["=== UNRESOLVED 1 ===\n=== END ===\n", "=== RESOLUTION 1 ===\n<<<<<<< ours\nx\n=== END ===\n", "I could not do that.\n"] as $reply) {
+        $fake = fakeClaude($reply);
+
+        $merge = runMergeDriver(...[...$proseConflict, 'docs/STATUS.md', null, ['MAP_MERGE_LLM' => '1', 'MAP_MERGE_LLM_COMMAND' => $fake['command']]]);
+
+        expect($merge['exit'])->not->toBe(0);
+        expect($merge['result'])->toContain("<<<<<<< ours\nPhase 2: API\n||||||| base\nPhase 1\n=======\nPhase 2: billing\n>>>>>>> theirs");
+
+        removeDir($fake['dir']);
+    }
+});
+
+it('resolves some conflicts with Claude and leaves the rest', function () {
+    $base = "# S\n\n## A\none\n\n## B\ntwo\n";
+    $ours = "# S\n\n## A\none ours\n\n## B\ntwo ours\n";
+    $theirs = "# S\n\n## A\none theirs\n\n## B\ntwo theirs\n";
+    $fake = fakeClaude("=== RESOLUTION 1 ===\none merged\n=== UNRESOLVED 2 ===\n=== END ===\n");
+
+    $merge = runMergeDriver($base, $ours, $theirs, 'docs/STATUS.md', null, ['MAP_MERGE_LLM' => '1', 'MAP_MERGE_LLM_COMMAND' => $fake['command']]);
+
+    expect($merge['result'])->toContain("## A\none merged\n")->toContain("<<<<<<< ours\ntwo ours\n");
+    expect($merge['stderr'])->toContain('resolved 1 of 2 conflict(s)');
+
+    removeDir($fake['dir']);
+});
+
+it('never calls Claude when disabled, and gives up on a slow reply', function () use ($proseConflict) {
+    $fake = fakeClaude("=== RESOLUTION 1 ===\nPhase 2\n=== END ===\n", sleep: 5);
+
+    runMergeDriver(...[...$proseConflict, 'docs/STATUS.md', null, ['MAP_MERGE_LLM' => '0', 'MAP_MERGE_LLM_COMMAND' => $fake['command']]]);
+    expect(file_exists($fake['prompt']))->toBeFalse();
+
+    $started = microtime(true);
+    $merge = runMergeDriver(...[...$proseConflict, 'docs/STATUS.md', null, ['MAP_MERGE_LLM' => '1', 'MAP_MERGE_LLM_COMMAND' => $fake['command'], 'MAP_MERGE_LLM_TIMEOUT' => '1']]);
+    expect(microtime(true) - $started)->toBeLessThan(4);
+    expect($merge['result'])->toContain('<<<<<<< ours');
+    expect($merge['stderr'])->toContain('failed or timed out');
+
+    removeDir($fake['dir']);
+});
+
+it('stops a real git merge for review when Claude resolved the conflict — no merge commit', function () {
+    $repo = sys_get_temp_dir().'/map-ai-merge-llm-repo-'.uniqid();
+    mkdir($repo, 0755, true);
+    $fake = fakeClaude("=== RESOLUTION 1 ===\nPhase 2: API and billing\n=== END ===\n");
+    $env = 'MAP_MERGE_LLM=1 MAP_MERGE_LLM_COMMAND='.escapeshellarg($fake['command']);
+    $git = fn (string $args) => shell_exec('cd '.escapeshellarg($repo).' && '.$env.' git -c user.name=t -c user.email=t@t '.$args.' 2>&1');
+
+    $git('init -q -b main');
+    (new Installer)->install(Installer::stubsPath(), $repo);
+    $status = $repo.'/docs/STATUS.md';
+    file_put_contents($status, "# STATUS.md\n\n## Current phase\nPhase 1\n");
+    $git('add -A');
+    $git('commit -qm install');
+
+    $git('checkout -qb feature');
+    file_put_contents($status, "# STATUS.md\n\n## Current phase\nPhase 2: billing\n");
+    $git('commit -qam theirs');
+    $git('checkout -q main');
+    file_put_contents($status, "# STATUS.md\n\n## Current phase\nPhase 2: API\n");
+    $git('commit -qam ours');
+    $head = trim((string) $git('rev-parse HEAD'));
+
+    $output = (string) $git('merge --no-edit feature');
+
+    expect($output)->toContain('Claude resolved 1 conflict(s)');
+    expect(file_get_contents($status))->toBe("# STATUS.md\n\n## Current phase\nPhase 2: API and billing\n");
+    expect(trim((string) $git('ls-files -u docs/STATUS.md')))->not->toBe(''); // still unmerged — awaiting git add
+    expect(trim((string) $git('rev-parse HEAD')))->toBe($head);            // no merge commit made
+
+    removeDir($repo);
+    removeDir($fake['dir']);
+});
+
+it('--resolve re-runs the rules on a file git left conflicted, without staging it', function () {
+    $repo = sys_get_temp_dir().'/map-ai-merge-resolve-'.uniqid();
+    mkdir($repo, 0755, true);
+    $git = fn (string $args) => shell_exec('cd '.escapeshellarg($repo).' && git -c user.name=t -c user.email=t@t '.$args.' 2>&1');
+
+    // Plain git, no driver registered: the append-at-end conflict lands as markers.
+    $git('init -q -b main');
+    mkdir($repo.'/docs');
+    mkdir($repo.'/.map');
+    copy(Installer::stubsPath().'/.map/merge.sh', $repo.'/.map/merge.sh');
+    $history = $repo.'/docs/ARCHITECTURE_HISTORY.md';
+    file_put_contents($history, "# AH\n\n### 2026-01-01 — One\nx\n");
+    $git('add -A');
+    $git('commit -qm base');
+    $git('checkout -qb feature');
+    file_put_contents($history, "# AH\n\n### 2026-01-01 — One\nx\n\n### 2026-02-02 — Theirs\ny\n");
+    $git('commit -qam theirs');
+    $git('checkout -q main');
+    file_put_contents($history, "# AH\n\n### 2026-01-01 — One\nx\n\n### 2026-02-01 — Ours\nz\n");
+    $git('commit -qam ours');
+    $git('merge --no-edit feature');
+    expect(file_get_contents($history))->toContain('<<<<<<<');
+
+    $process = proc_open(
+        ['bash', '.map/merge.sh', '--resolve', 'docs/ARCHITECTURE_HISTORY.md'],
+        [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $pipes,
+        $repo,
+        ['PATH' => getenv('PATH'), 'HOME' => getenv('HOME'), 'MAP_MERGE_LLM' => '0'],
+    );
+    stream_get_contents($pipes[1]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $exit = proc_close($process);
+
+    expect($exit)->toBe(0);
+    expect(file_get_contents($history))->toBe("# AH\n\n### 2026-01-01 — One\nx\n\n### 2026-02-01 — Ours\nz\n\n### 2026-02-02 — Theirs\ny\n");
+    expect(trim((string) $git('ls-files -u docs/ARCHITECTURE_HISTORY.md')))->not->toBe(''); // never git-adds
+
+    removeDir($repo);
 });

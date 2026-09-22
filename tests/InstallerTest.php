@@ -156,7 +156,8 @@ it('appends merge=map-ai entries to an empty gitattributes', function () {
     expect($gitattributes)
         ->toContain('docs/BUGS.md merge=map-ai')
         ->not->toContain('merge=union')
-        ->not->toContain('docs/COMPLIANCE.md');
+        ->toContain('docs/COMPLIANCE.md merge=map-ai')
+        ->toContain('AGENTS.md merge=map-ai');
 });
 
 it('appends gitattributes entries after existing content', function () {

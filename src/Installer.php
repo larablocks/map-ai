@@ -25,6 +25,7 @@ class Installer
     public const MANAGED_FILES = [
         '.claude/hooks/map-token-check.sh',
         '.claude/hooks/map-first-run-check.sh',
+        '.claude/skills/map-resolve/SKILL.md',
         '.cursor/rules/agents.mdc',
         '.map/merge.sh',
         'docs/MEMORY.example.md',
@@ -108,9 +109,10 @@ class Installer
     /**
      * merge=map-ai routes the Claude-maintained docs through .map/merge.sh, which
      * resolves the conflicts markdown docs typically hit (both branches appending
-     * entries or table rows, bumping "Last updated", picking the same next BUG-N) and
-     * leaves real conflicts to a human. Human-authored docs (DESIGN/DOCKER/SETUP/
-     * COMPLIANCE) are deliberately left on git's normal merge. Mirrors lib.sh.
+     * entries or table rows, bumping "Last updated", picking the same next BUG-N), then
+     * offers Claude what's left — always stopping for review. Covers every file an AI
+     * agent writes to, including the ones it only edits with approval (DESIGN/DOCKER/
+     * SETUP/COMPLIANCE, AGENTS.md and the other entry points). Mirrors lib.sh.
      */
     private const GITATTRIBUTES_HEADER = '# MAP — structured markdown merge driver (.map/merge.sh, registered per clone)';
 
@@ -133,6 +135,15 @@ class Installer
         'docs/architecture/*.md merge=map-ai',
         'docs/integrations/*.md merge=map-ai',
         'docs/qa/*.md merge=map-ai',
+        'docs/DESIGN.md merge=map-ai',
+        'docs/DOCKER.md merge=map-ai',
+        'docs/SETUP.md merge=map-ai',
+        'docs/COMPLIANCE.md merge=map-ai',
+        'AGENTS.md merge=map-ai',
+        'CLAUDE.md merge=map-ai',
+        'GEMINI.md merge=map-ai',
+        '.github/copilot-instructions.md merge=map-ai',
+        '.claude/rules/*.md merge=map-ai',
     ];
 
     /**

@@ -66,7 +66,7 @@ MAP defines a set of **write rules** — declarative triggers built into `AGENTS
 | A new project-specific pattern | `docs/CODE_PATTERNS.md` — checked first to avoid duplication |
 | A new domain term or abbreviation | `docs/GLOSSARY.md` |
 | Surprising behaviour (framework, DB, tests, environment) | `docs/memory/[topic].md` — routed by subject |
-| Time wasted on a mistake | `docs/memory/gotchas.md` — capped at 10, least-actionable removed when full |
+| Time wasted on a mistake | `docs/memory/gotchas.md` — capped at ~750 tokens, least-actionable removed when full |
 | A schema change | `docs/SCHEMA.md` — updated immediately |
 | An architecture change | `docs/ARCHITECTURE.md` — updated to reflect current state |
 | Tests added or coverage run | `docs/TESTING_COVERAGE.md` — from actual output, never estimated |
@@ -82,7 +82,7 @@ The result is documentation that reflects what is actually true about the projec
 
 ## Designed for lean context
 
-Every file in MAP has a size ceiling enforced by the AI's own write rules. `AGENTS.md` stays under 100 lines. `docs/memory/gotchas.md` caps at 10 entries. Memory topic files cap at 50. When a file fills up, the AI summarises or removes before adding — so files stay dense and high-signal rather than growing without bound.
+Every working file in MAP has a size ceiling enforced by the AI's own write rules (the deliberate exceptions are the append-only logs — `ARCHITECTURE_HISTORY.md`, `BUGS_ARCHIVE.md`, and `METRICS_HISTORY.md` — which have no size limit and are never summarised; see below). `AGENTS.md` stays under 3,000 tokens (estimated as bytes ÷ 4) — measured in tokens, not lines, because it loads every session and one long line costs as much as many short ones. `docs/memory/gotchas.md` caps at ~750 tokens and `docs/memory/shared.md` at ~1,500 (both load every session). Other memory topic files cap at ~2,500 tokens. In Claude Code, `.claude/hooks/map-token-check.sh` enforces all of these: at session start, and immediately after any edit that pushes a capped file over its cap. When a file fills up, the AI summarises or removes before adding — so files stay dense and high-signal rather than growing without bound.
 
 Beyond size caps, the structure itself controls what gets loaded:
 
@@ -90,7 +90,7 @@ Beyond size caps, the structure itself controls what gets loaded:
 
 **Index before content.** `MEMORY.md` is a one-page index — a table of topic files and entry counts. The AI reads it first to know what knowledge exists, then loads only the topic file relevant to the current task. `docs/memory/database.md` is never loaded during a UI fix.
 
-**History separated from current state.** `ARCHITECTURE_HISTORY.md` grows large over time; `ARCHITECTURE.md` stays a concise snapshot of current structure. You pay for historical decision tokens only when a decision is actively being revisited.
+**History separated from current state.** `ARCHITECTURE_HISTORY.md` has no size limit and is never summarised — it grows for the life of the project so no decision's reasoning is ever lost; `ARCHITECTURE.md` stays a concise snapshot of current structure. You pay for historical decision tokens only when a decision is actively being revisited.
 
 **Write-on-discovery keeps future context accurate.** The AI writes to docs immediately when it finds something rather than waiting until session end. Accurate docs mean future sessions don't waste tokens working from stale context or asking clarifying questions they shouldn't need to ask.
 
@@ -217,7 +217,8 @@ $doctor->applyHunks('/path/to/project/docs/GLOSSARY.md', $hunks);
 | `true` | `missing-template-updates` | A `SCAFFOLD_FILES` entry has new stub content the project doesn't have yet, and/or a stale italic note, HTML-comment block, or fenced-code trailing comment the stub has since reworded — all safe to take from the stub as-is |
 | `true` | `copilot-out-of-sync` (safe case) | `.github/copilot-instructions.md` is stale, but regenerating it from the project's own `AGENTS.md`/`security.md`/`testing.md` would only add or reorder lines already present in those source files |
 | `false` | `outdated-scaffold-file` | A `SCAFFOLD_FILES` entry differs from the stub in a way that isn't a pure addition or a safe note/comment swap — likely real project content, needs a human diff and merge |
-| `false` | `agents-md-too-long` | `AGENTS.md` is over the 100-line cap — which sections to cut is a judgment call |
+| `false` | `agents-md-too-long` | `AGENTS.md` is over the 3,000-token cap (bytes ÷ 4) — which sections to cut is a judgment call |
+| `false` | `token-hook-not-registered` | `.claude/settings.json` exists but doesn't register `map-token-check.sh` — the file is copy-if-absent and may hold unrelated hooks/permissions, so the entries are copied in by hand (a missing `settings.json` is reported as a fixable `missing-file` instead) |
 | `false` | `copilot-out-of-sync` (unsafe case) | Regenerating `.github/copilot-instructions.md` would drop a line currently in the file — likely a hand edit, or content since removed upstream |
 
 `fix()` applies the `true` rows only: it copies in missing files (via `Installer::install(force: false)`, so `MANAGED_FILES` re-sync and missing `SCAFFOLD_FILES` are added), fills in missing `.gitignore`/`.gitattributes` entries, patches in new stub content and reworded instructional notes into existing `SCAFFOLD_FILES`, and regenerates `.github/copilot-instructions.md` when that's a strict superset of what's already there.
@@ -298,7 +299,7 @@ For that native mechanism, MAP ships `.claude/skills/example-skill/SKILL.md` —
 
 ### Hub-and-spoke: one recurring shape
 
-A few places in MAP converge on the same shape independently: a hub file holds an index or quick-reference and owns the maintenance contract, while companion files hold the depth. `docs/COMMANDS.md`'s quick-index table points at per-command detail below it; `docs/ARCHITECTURE.md`'s Component docs table points into `docs/architecture/[name].md`; `docs/integrations/[service].md` is guided to split into `[service]-[topic].md` companions once a single file passes ~150 lines or covers multiple distinct concerns. It isn't a distinct file type MAP defines — it's a convention worth recognizing when a single doc starts doing too much: split it, keep one file as the index, and note in that index that it and its companions must be kept current together.
+A few places in MAP converge on the same shape independently: a hub file holds an index or quick-reference and owns the maintenance contract, while companion files hold the depth. `docs/COMMANDS.md`'s quick-index table points at per-command detail below it; `docs/ARCHITECTURE.md`'s Component docs table points into `docs/architecture/[name].md`; `docs/integrations/[service].md` is guided to split into `[service]-[topic].md` companions once a single file passes ~2,000 tokens or covers multiple distinct concerns. It isn't a distinct file type MAP defines — it's a convention worth recognizing when a single doc starts doing too much: split it, keep one file as the index, and note in that index that it and its companions must be kept current together.
 
 ---
 

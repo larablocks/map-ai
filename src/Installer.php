@@ -23,6 +23,7 @@ class Installer
 
     /** Framework-owned files — always kept in sync with the package stubs, never backed up. */
     public const MANAGED_FILES = [
+        '.claude/hooks/map-token-check.sh',
         '.claude/hooks/map-first-run-check.sh',
         '.cursor/rules/agents.mdc',
         'docs/MEMORY.example.md',

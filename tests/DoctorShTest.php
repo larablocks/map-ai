@@ -119,14 +119,45 @@ it('never touches an out-of-date scaffold file, in check or fix mode', function 
     expect(file_get_contents($this->tempDir.'/docs/BUGS.md'))->toBe("# stale project bugs\ncustom content\n");
 });
 
-it('flags AGENTS.md over the line cap as review-only, not fixable', function () {
+it('flags AGENTS.md over the token cap as review-only, not fixable', function () {
     shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
-    $bloated = str_repeat("- extra line\n", 110);
-    file_put_contents($this->tempDir.'/AGENTS.md', $bloated);
+    $fewLongLines = str_repeat(str_repeat('x', 2000)."\n", 10);
+    file_put_contents($this->tempDir.'/AGENTS.md', $fewLongLines);
 
     $result = runDoctorSh($this->tempDir);
 
     expect($result['output'])->toContain('[REVIEW]   agents-md-too-long');
+    expect($result['output'])->toContain('~5003 tokens');
+});
+
+it('does not flag AGENTS.md with many short lines under the token cap', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+    file_put_contents($this->tempDir.'/AGENTS.md', str_repeat("- x\n", 150));
+
+    $result = runDoctorSh($this->tempDir);
+
+    expect($result['output'])->not->toContain('agents-md-too-long');
+});
+
+it('flags a missing settings.json as fixable and --fix installs it with the token hook', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+    unlink($this->tempDir.'/.claude/settings.json');
+
+    expect(runDoctorSh($this->tempDir)['output'])->toContain('[FIXABLE]  missing-file             .claude/settings.json');
+
+    runDoctorSh($this->tempDir, fix: true);
+    expect(file_get_contents($this->tempDir.'/.claude/settings.json'))->toContain('map-token-check.sh');
+});
+
+it('flags settings.json that does not register the token hook as review-only', function () {
+    shell_exec('bash '.escapeshellarg($this->mapAiDir.'/install.sh').' '.escapeshellarg($this->tempDir).' 2>&1');
+    expect(runDoctorSh($this->tempDir)['output'])->not->toContain('token-hook-not-registered');
+
+    file_put_contents($this->tempDir.'/.claude/settings.json', '{"hooks": {}}');
+
+    expect(runDoctorSh($this->tempDir)['output'])->toContain('[REVIEW]   token-hook-not-registered');
+    runDoctorSh($this->tempDir, fix: true);
+    expect(file_get_contents($this->tempDir.'/.claude/settings.json'))->toBe('{"hooks": {}}');
 });
 
 it('regenerates copilot-instructions.md when the only difference is added AGENTS.md content', function () {

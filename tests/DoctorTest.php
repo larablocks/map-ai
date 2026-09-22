@@ -58,7 +58,7 @@ it('reports an out-of-date scaffold file as not fixable', function () {
     expect($bugs[0]['fixable'])->toBeFalse();
 });
 
-it('does not flag AGENTS.md within the line cap', function () {
+it('does not flag AGENTS.md within the token cap', function () {
     (new Installer)->install($this->stubsPath, $this->tempDir);
 
     $findings = $this->doctor->check($this->stubsPath, $this->tempDir);
@@ -66,9 +66,9 @@ it('does not flag AGENTS.md within the line cap', function () {
     expect(findingsOf($findings, 'agents-md-too-long'))->toBeEmpty();
 });
 
-it('flags AGENTS.md over the line cap as not fixable', function () {
+it('flags AGENTS.md over the token cap as not fixable', function () {
     (new Installer)->install($this->stubsPath, $this->tempDir);
-    $bloated = str_repeat("- extra line\n", Doctor::AGENTS_MD_MAX_LINES + 10);
+    $bloated = str_repeat("- extra line\n", intdiv(Doctor::AGENTS_MD_MAX_TOKENS * 4, 13) + 10);
     file_put_contents($this->tempDir.'/AGENTS.md', $bloated);
 
     $findings = $this->doctor->check($this->stubsPath, $this->tempDir);
@@ -76,6 +76,68 @@ it('flags AGENTS.md over the line cap as not fixable', function () {
     $tooLong = findingsOf($findings, 'agents-md-too-long');
     expect($tooLong)->toHaveCount(1);
     expect($tooLong[0]['fixable'])->toBeFalse();
+});
+
+it('flags AGENTS.md over the token cap even when it has few lines', function () {
+    (new Installer)->install($this->stubsPath, $this->tempDir);
+    $fewLongLines = str_repeat(str_repeat('x', 2000)."\n", 10);
+    file_put_contents($this->tempDir.'/AGENTS.md', $fewLongLines);
+
+    $findings = $this->doctor->check($this->stubsPath, $this->tempDir);
+
+    expect(findingsOf($findings, 'agents-md-too-long'))->toHaveCount(1);
+});
+
+it('does not flag AGENTS.md with many short lines under the token cap', function () {
+    (new Installer)->install($this->stubsPath, $this->tempDir);
+    file_put_contents($this->tempDir.'/AGENTS.md', str_repeat("- x\n", 150));
+
+    $findings = $this->doctor->check($this->stubsPath, $this->tempDir);
+
+    expect(findingsOf($findings, 'agents-md-too-long'))->toBeEmpty();
+});
+
+it('estimates tokens as bytes divided by four, rounded up', function () {
+    expect(Doctor::estimateTokens(''))->toBe(0);
+    expect(Doctor::estimateTokens('abcd'))->toBe(1);
+    expect(Doctor::estimateTokens('abcde'))->toBe(2);
+});
+
+it('does not flag the token hook on a fresh install', function () {
+    (new Installer)->install($this->stubsPath, $this->tempDir);
+
+    $findings = $this->doctor->check($this->stubsPath, $this->tempDir);
+
+    expect(findingsOf($findings, 'token-hook-not-registered'))->toBeEmpty();
+});
+
+it('flags a missing settings.json as fixable and fix() installs it with the token hook', function () {
+    (new Installer)->install($this->stubsPath, $this->tempDir);
+    unlink($this->tempDir.'/.claude/settings.json');
+
+    $missing = array_values(array_filter(
+        findingsOf($this->doctor->check($this->stubsPath, $this->tempDir), 'missing-file'),
+        fn (array $f) => $f['file'] === '.claude/settings.json'
+    ));
+    expect($missing)->toHaveCount(1);
+    expect($missing[0]['fixable'])->toBeTrue();
+
+    $this->doctor->fix($this->stubsPath, $this->tempDir);
+    expect(file_get_contents($this->tempDir.'/.claude/settings.json'))->toContain('map-token-check.sh');
+});
+
+it('flags settings.json that does not register the token hook as not fixable', function () {
+    (new Installer)->install($this->stubsPath, $this->tempDir);
+    file_put_contents($this->tempDir.'/.claude/settings.json', '{"hooks": {}}');
+
+    $findings = $this->doctor->check($this->stubsPath, $this->tempDir);
+
+    $missing = findingsOf($findings, 'token-hook-not-registered');
+    expect($missing)->toHaveCount(1);
+    expect($missing[0]['fixable'])->toBeFalse();
+
+    $this->doctor->fix($this->stubsPath, $this->tempDir);
+    expect(file_get_contents($this->tempDir.'/.claude/settings.json'))->toBe('{"hooks": {}}');
 });
 
 it('flags copilot-instructions.md as fixable when it is only missing added content', function () {

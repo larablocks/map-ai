@@ -10,13 +10,17 @@ namespace larablocks\MapAi;
  *    adds files/lines that don't exist anywhere yet (missing files, missing gitignore
  *    entries, missing .github/copilot-instructions.md lines).
  * 2. Anything that would require dropping or reinterpreting existing content
- *    (an out-of-date SCAFFOLD_FILES entry, an AGENTS.md over the line cap, a
+ *    (an out-of-date SCAFFOLD_FILES entry, an AGENTS.md over the token cap, a
  *    copilot-instructions.md regeneration that would lose a line) is check()-only —
  *    fix() reports it but never touches the file.
  */
 class Doctor
 {
-    public const AGENTS_MD_MAX_LINES = 100;
+    /**
+     * AGENTS.md loads into every session, so it's capped in tokens rather than lines —
+     * one long line costs as much as many short ones. See estimateTokens().
+     */
+    public const AGENTS_MD_MAX_TOKENS = 3000;
 
     private const COPILOT_HEADER = <<<'MD'
         # copilot-instructions.md
@@ -69,7 +73,11 @@ class Doctor
             }
         }
 
-        if ($finding = $this->checkAgentsLineLimit($targetPath)) {
+        if ($finding = $this->checkAgentsTokenLimit($targetPath)) {
+            $findings[] = $finding;
+        }
+
+        if ($finding = $this->checkTokenHookRegistered($targetPath)) {
             $findings[] = $finding;
         }
 
@@ -156,7 +164,7 @@ class Doctor
     }
 
     /** @return ?array{id: string, fixable: bool, file: string, message: string} */
-    private function checkAgentsLineLimit(string $targetPath): ?array
+    private function checkAgentsTokenLimit(string $targetPath): ?array
     {
         $path = $targetPath.'/AGENTS.md';
 
@@ -164,10 +172,10 @@ class Doctor
             return null;
         }
 
-        $lines = file($path, FILE_IGNORE_NEW_LINES);
-        $lineCount = $lines === false ? 0 : count($lines);
+        $contents = file_get_contents($path);
+        $tokens = self::estimateTokens($contents === false ? '' : $contents);
 
-        if ($lineCount <= self::AGENTS_MD_MAX_LINES) {
+        if ($tokens <= self::AGENTS_MD_MAX_TOKENS) {
             return null;
         }
 
@@ -175,8 +183,54 @@ class Doctor
             'id' => 'agents-md-too-long',
             'fixable' => false,
             'file' => 'AGENTS.md',
-            'message' => "{$lineCount} lines, over the ".self::AGENTS_MD_MAX_LINES.' line cap — trim by hand (which sections to cut is a judgment call).',
+            'message' => "~{$tokens} tokens, over the ".self::AGENTS_MD_MAX_TOKENS.' token cap — trim by hand (which sections to cut is a judgment call).',
         ];
+    }
+
+    /**
+     * .claude/settings.json is copy-if-absent (see Installer::install()), so projects
+     * installed before the token-check hook existed never get it registered — the
+     * hook script syncs as a MANAGED_FILES entry, but nothing runs it. Settings may
+     * hold unrelated hooks/permissions, so this is review-only, never auto-merged.
+     *
+     * @return ?array{id: string, fixable: bool, file: string, message: string}
+     */
+    private function checkTokenHookRegistered(string $targetPath): ?array
+    {
+        $path = $targetPath.'/.claude/settings.json';
+
+        // Absent entirely → fix()'s Installer::install() copies the stub in, hooks and all.
+        if (! file_exists($path)) {
+            return [
+                'id' => 'missing-file',
+                'fixable' => true,
+                'file' => '.claude/settings.json',
+                'message' => 'Missing — registers the MAP hooks (first-run check, AGENTS.md token cap).',
+            ];
+        }
+
+        $contents = file_get_contents($path);
+
+        if ($contents !== false && str_contains($contents, 'map-token-check.sh')) {
+            return null;
+        }
+
+        return [
+            'id' => 'token-hook-not-registered',
+            'fixable' => false,
+            'file' => '.claude/settings.json',
+            'message' => 'Does not register .claude/hooks/map-token-check.sh — copy its SessionStart and PostToolUse entries from the stub by hand.',
+        ];
+    }
+
+    /**
+     * Rough token estimate: bytes ÷ 4, rounded up. No tokenizer dependency, and
+     * identical to doctor.sh and .claude/hooks/map-token-check.sh so all three
+     * agree on whether a file is over the cap.
+     */
+    public static function estimateTokens(string $contents): int
+    {
+        return intdiv(strlen($contents) + 3, 4);
     }
 
     /** @return ?array{id: string, fixable: bool, file: string, message: string} */

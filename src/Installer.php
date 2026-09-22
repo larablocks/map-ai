@@ -26,6 +26,7 @@ class Installer
         '.claude/hooks/map-token-check.sh',
         '.claude/hooks/map-first-run-check.sh',
         '.cursor/rules/agents.mdc',
+        '.map/merge.sh',
         'docs/MEMORY.example.md',
         'docs/agents/agent.example.md',
         'docs/api/api.example.md',
@@ -105,18 +106,56 @@ class Installer
     ];
 
     /**
-     * merge=union lets concurrent appends to these append-only logs combine automatically
-     * instead of producing conflict markers. It does not catch two branches assigning the
-     * same BUG-N — docs/BUGS.md documents the post-merge renumbering procedure for that.
+     * merge=map-ai routes the Claude-maintained docs through .map/merge.sh, which
+     * resolves the conflicts markdown docs typically hit (both branches appending
+     * entries or table rows, bumping "Last updated", picking the same next BUG-N) and
+     * leaves real conflicts to a human. Human-authored docs (DESIGN/DOCKER/SETUP/
+     * COMPLIANCE) are deliberately left on git's normal merge. Mirrors lib.sh.
      */
-    private const GITATTRIBUTES_HEADER = '# MAP — merge-friendly append-only logs';
+    private const GITATTRIBUTES_HEADER = '# MAP — structured markdown merge driver (.map/merge.sh, registered per clone)';
 
-    private const GITATTRIBUTES_ENTRIES = [
+    public const GITATTRIBUTES_ENTRIES = [
+        'docs/BUGS.md merge=map-ai',
+        'docs/BUGS_ARCHIVE.md merge=map-ai',
+        'docs/ARCHITECTURE_HISTORY.md merge=map-ai',
+        'docs/METRICS_HISTORY.md merge=map-ai',
+        'docs/STATUS.md merge=map-ai',
+        'docs/ARCHITECTURE.md merge=map-ai',
+        'docs/CODE_PATTERNS.md merge=map-ai',
+        'docs/COMMANDS.md merge=map-ai',
+        'docs/FEATURE_FLAGS.md merge=map-ai',
+        'docs/GLOSSARY.md merge=map-ai',
+        'docs/SCHEMA.md merge=map-ai',
+        'docs/TESTING_COVERAGE.md merge=map-ai',
+        'docs/memory/shared.md merge=map-ai',
+        'docs/agents/*.md merge=map-ai',
+        'docs/api/*.md merge=map-ai',
+        'docs/architecture/*.md merge=map-ai',
+        'docs/integrations/*.md merge=map-ai',
+        'docs/qa/*.md merge=map-ai',
+    ];
+
+    /**
+     * Lines earlier MAP versions wrote. merge=union kept every line from both sides,
+     * which resurrected bugs one branch had moved to BUGS_ARCHIVE.md — removed on
+     * install now that merge=map-ai replaces them.
+     */
+    public const LEGACY_GITATTRIBUTES_ENTRIES = [
         'docs/BUGS.md merge=union',
         'docs/BUGS_ARCHIVE.md merge=union',
         'docs/ARCHITECTURE_HISTORY.md merge=union',
         'docs/METRICS_HISTORY.md merge=union',
     ];
+
+    /**
+     * The per-clone git config that makes merge=map-ai mean something. git config is
+     * never committed, so every clone registers it once — install, doctor fix and the
+     * SessionStart hook all do. Unregistered, git silently falls back to its normal
+     * text merge for these files.
+     */
+    public const MERGE_DRIVER_NAME = 'MAP structured markdown merge';
+
+    public const MERGE_DRIVER_COMMAND = 'bash "$(git rev-parse --show-toplevel)/.map/merge.sh" %O %A %B %P';
 
     public static function stubsPath(): string
     {
@@ -146,7 +185,8 @@ class Installer
      *     files: list<array{action: 'copy'|'update'|'skip'|'identical'|'missing'|'symlink', file: string, backed_up: bool}>,
      *     gitignore: 'updated'|'skipped',
      *     gitattributes: 'updated'|'skipped',
-     *     claudeSettings: array{action: 'copy'|'update'|'skip'|'identical'|'missing'|'symlink', file: string, backed_up: bool}
+     *     claudeSettings: array{action: 'copy'|'update'|'skip'|'identical'|'missing'|'symlink', file: string, backed_up: bool},
+     *     mergeDriver: 'updated'|'skipped'|'not-a-repo'|'failed'
      * }
      */
     public function install(string $stubsPath, string $targetPath, bool $force = false, ?callable $progress = null): array
@@ -180,6 +220,7 @@ class Installer
             'gitignore' => $this->mergeGitignore($targetPath),
             'gitattributes' => $this->mergeGitattributes($targetPath),
             'claudeSettings' => $claudeSettings,
+            'mergeDriver' => $this->registerMergeDriver($targetPath),
         ];
     }
 
@@ -295,23 +336,90 @@ class Installer
     {
         $gitattributesPath = $targetPath.'/.gitattributes';
         $existing = file_exists($gitattributesPath) ? (file_get_contents($gitattributesPath) ?: '') : '';
-        $existingLines = $existing !== '' ? array_map('trim', explode("\n", $existing)) : [];
 
+        // Drop the merge=union lines earlier MAP versions wrote — exact matches only,
+        // so a project's own attributes are never touched.
+        $lines = $existing !== '' ? explode("\n", $existing) : [];
+        $kept = array_values(array_filter(
+            $lines,
+            fn (string $line) => ! in_array(trim($line), self::LEGACY_GITATTRIBUTES_ENTRIES, true),
+        ));
+        $removedLegacy = count($kept) !== count($lines);
+        $existing = implode("\n", $kept);
+
+        $existingLines = $existing !== '' ? array_map('trim', $kept) : [];
         $missing = array_values(array_diff(self::GITATTRIBUTES_ENTRIES, $existingLines));
 
-        if ($missing === []) {
+        if ($missing === [] && ! $removedLegacy) {
             return 'skipped';
         }
 
         // Only re-emit the header comment on a first write — a partial match means the
         // header is already there, so appending just the missing entries avoids duplicating
         // lines that already exist.
-        $addition = $missing === self::GITATTRIBUTES_ENTRIES
-            ? "\n".self::GITATTRIBUTES_HEADER."\n".implode("\n", self::GITATTRIBUTES_ENTRIES)."\n"
-            : "\n".implode("\n", $missing)."\n";
+        $addition = '';
+        if ($missing !== []) {
+            $header = in_array(self::GITATTRIBUTES_HEADER, $existingLines, true) ? '' : self::GITATTRIBUTES_HEADER."\n";
+            $addition = "\n".$header.implode("\n", $missing)."\n";
+        }
 
         file_put_contents($gitattributesPath, $existing.$addition);
 
         return 'updated';
+    }
+
+    /**
+     * Registers the merge=map-ai driver in the target clone's git config.
+     *
+     * @return 'updated'|'skipped'|'not-a-repo'|'failed'
+     */
+    public function registerMergeDriver(string $targetPath): string
+    {
+        if (! self::isGitRepo($targetPath)) {
+            return 'not-a-repo';
+        }
+
+        if (self::mergeDriverRegistered($targetPath)) {
+            return 'skipped';
+        }
+
+        $ok = self::git($targetPath, ['config', 'merge.map-ai.name', self::MERGE_DRIVER_NAME]) !== null
+            && self::git($targetPath, ['config', 'merge.map-ai.driver', self::MERGE_DRIVER_COMMAND]) !== null;
+
+        return $ok ? 'updated' : 'failed';
+    }
+
+    public static function isGitRepo(string $targetPath): bool
+    {
+        return trim((string) self::git($targetPath, ['rev-parse', '--is-inside-work-tree'])) === 'true';
+    }
+
+    public static function mergeDriverRegistered(string $targetPath): bool
+    {
+        return trim((string) self::git($targetPath, ['config', '--get', 'merge.map-ai.driver'])) === self::MERGE_DRIVER_COMMAND;
+    }
+
+    /**
+     * Runs git in $targetPath without a shell. Returns stdout, or null on a non-zero exit.
+     *
+     * @param  list<string>  $args
+     */
+    private static function git(string $targetPath, array $args): ?string
+    {
+        $process = proc_open(
+            ['git', '-C', $targetPath, ...$args],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+
+        if (! is_resource($process)) {
+            return null;
+        }
+
+        $stdout = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        return proc_close($process) === 0 ? (string) $stdout : null;
     }
 }

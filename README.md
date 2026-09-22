@@ -30,7 +30,7 @@ Without it, each AI session starts from zero. With it, sessions start informed.
 
 `docs/BUGS.md` is a live list the AI maintains automatically — appended on discovery, moved to `docs/BUGS_ARCHIVE.md` on fix. Known issues don't disappear from context at session end.
 
-Both files carry `BUG-N` IDs and ship with `merge=union` set in `.gitattributes`, so two branches appending entries at the same time combine cleanly instead of producing conflict markers. If two branches independently assign the same `BUG-N`, the AI is instructed to notice after a merge and renumber the duplicate — `docs/BUGS.md` documents the exact procedure.
+Both files carry `BUG-N` IDs and are merged by MAP's own git merge driver (see [Merging MAP docs](#merging-map-docs)), so two branches adding entries at the same time combine cleanly instead of producing conflict markers, a bug one branch moved to the archive stays moved, and if two branches independently assign the same `BUG-N` the incoming one is renumbered to the next free number.
 
 ### Security and testing standards apply every session
 
@@ -177,6 +177,23 @@ Two patterns, depending on your ecosystem:
 
 ---
 
+## Merging MAP docs
+
+MAP docs are edited on every branch, so they conflict on merge more than most files — usually in boring ways: both branches appended an entry at the end of a log, both added a row to the same table, both bumped `Last updated`, or both picked the same next `BUG-N`. MAP ships a git merge driver, `.map/merge.sh`, that resolves exactly those cases and leaves everything else to you.
+
+`.gitattributes` routes the Claude-maintained docs to it (`docs/BUGS.md merge=map-ai`, and likewise `BUGS_ARCHIVE.md`, `ARCHITECTURE_HISTORY.md`, `METRICS_HISTORY.md`, `STATUS.md`, `ARCHITECTURE.md`, `CODE_PATTERNS.md`, `COMMANDS.md`, `FEATURE_FLAGS.md`, `GLOSSARY.md`, `SCHEMA.md`, `TESTING_COVERAGE.md`, `docs/memory/shared.md`, and the `docs/agents|api|architecture|integrations|qa/` folders). Human-authored docs — `DESIGN.md`, `DOCKER.md`, `SETUP.md`, `COMPLIANCE.md` — stay on git's normal merge.
+
+How it resolves a file:
+
+1. **Git's own merge first.** If git merges the file cleanly, that result is used unchanged. The driver never alters a merge git would have made on its own (apart from renumbering duplicate `BUG-N`s, below).
+2. **Block-by-block on conflict.** Each side is split into blocks at markdown headings (headings inside code fences and HTML comments don't count) and merged block by block, so two new entries under different headings are both kept — ours first, then theirs. An entry deleted on one side and untouched on the other stays deleted (a bug moved to `BUGS_ARCHIVE.md` doesn't come back).
+3. **Only safe shapes inside a block.** Where both sides changed the same block, it resolves only: table rows (3-way merged by their first cell), pure insertions on both sides (ours, then theirs), and a `Last updated` line (newest date wins).
+4. **Duplicate `BUG-N`.** In `BUGS.md` / `BUGS_ARCHIVE.md`, if both branches used the same number, the entry already on your side keeps it and the other is renumbered to the next free number across both files and both branches. The merge prints what it renumbered so references in `docs/qa/` can be fixed.
+
+Anything else — the same line of prose rewritten on both sides, an entry edited on one side and deleted on the other — is a real conflict: the driver exits non-zero and leaves git's normal conflict markers.
+
+The driver is plain bash and POSIX awk (stock macOS bash 3.2 works) with no LLM involved. `.gitattributes` is committed, but the driver's registration lives in `.git/config`, which a clone never copies — so it's registered per clone by `install.sh`, `doctor --fix`/`Doctor::fix()`, `map:install`, and silently by the SessionStart hook on a clone's first Claude Code session. `doctor` reports `merge-driver-not-registered` when it's missing. Unregistered, git just falls back to its normal text merge. Merges made on GitHub (the merge button, merge queues) never run local merge drivers.
+
 ## Upgrading an existing MAP install
 
 For a brand-new project, letting `install.sh` / `Installer::install()` copy the full template is correct — there's nothing to lose. For a project that's had MAP running for a while, its `AGENTS.md` and other `SCAFFOLD_FILES` likely carry project-specific additions the template doesn't know about — extra Hard rules, custom Load rules for project-specific docs, and so on.
@@ -218,6 +235,7 @@ $doctor->applyHunks('/path/to/project/docs/GLOSSARY.md', $hunks);
 | `true` | `copilot-out-of-sync` (safe case) | `.github/copilot-instructions.md` is stale, but regenerating it from the project's own `AGENTS.md`/`security.md`/`testing.md` would only add or reorder lines already present in those source files |
 | `false` | `outdated-scaffold-file` | A `SCAFFOLD_FILES` entry differs from the stub in a way that isn't a pure addition or a safe note/comment swap — likely real project content, needs a human diff and merge |
 | `false` | `agents-md-too-long` | `AGENTS.md` is over the 3,000-token cap (bytes ÷ 4) — which sections to cut is a judgment call |
+| `true` | `merge-driver-not-registered` | The clone's `.git/config` doesn't register `merge.map-ai` — `.gitattributes` routes MAP docs to it, but git falls back to its normal text merge until it's registered |
 | `false` | `token-hook-not-registered` | `.claude/settings.json` exists but doesn't register `map-token-check.sh` — the file is copy-if-absent and may hold unrelated hooks/permissions, so the entries are copied in by hand (a missing `settings.json` is reported as a fixable `missing-file` instead) |
 | `false` | `copilot-out-of-sync` (unsafe case) | Regenerating `.github/copilot-instructions.md` would drop a line currently in the file — likely a hand edit, or content since removed upstream |
 
@@ -256,6 +274,10 @@ GEMINI.md                          — Gemini CLI entry point (@AGENTS.md)
 .claude/skills/example-skill/SKILL.md — template for a Claude Code skill (auto-discovered, no wiring needed)
 .github/copilot-instructions.md    — Copilot entry point (AGENTS.md inlined)
 .cursor/rules/agents.mdc           — Cursor entry point (@AGENTS.md)
+.claude/settings.json              — registers the MAP hooks below (copied only if absent)
+.claude/hooks/map-first-run-check.sh — SessionStart: first-run check + registers the merge driver
+.claude/hooks/map-token-check.sh   — SessionStart/PostToolUse: enforces the token caps
+.map/merge.sh                      — git merge driver for MAP docs (see Merging MAP docs)
 
 docs/STATUS.md                     — project health: build, tests, blockers, milestones
 docs/BUGS.md                       — open bugs (AI-maintained)

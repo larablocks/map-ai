@@ -81,6 +81,15 @@ class Doctor
             $findings[] = $finding;
         }
 
+        if (Installer::isGitRepo($targetPath) && ! Installer::mergeDriverRegistered($targetPath)) {
+            $findings[] = [
+                'id' => 'merge-driver-not-registered',
+                'fixable' => true,
+                'file' => '.git/config',
+                'message' => "merge.map-ai isn't registered in this clone — .gitattributes routes MAP docs to it, but git falls back to its normal text merge until it is.",
+            ];
+        }
+
         if ($finding = $this->checkCopilotSync($targetPath)) {
             $findings[] = $finding;
         }
@@ -114,6 +123,10 @@ class Doctor
 
         if ($installResult['gitattributes'] === 'updated') {
             $applied[] = $this->reportFix(['id' => 'gitattributes', 'file' => '.gitattributes', 'action' => 'updated'], $progress);
+        }
+
+        if ($installResult['mergeDriver'] === 'updated') {
+            $applied[] = $this->reportFix(['id' => 'merge-driver-not-registered', 'file' => '.git/config', 'action' => 'updated'], $progress);
         }
 
         // Patch in new template content before regenerating copilot-instructions.md, so

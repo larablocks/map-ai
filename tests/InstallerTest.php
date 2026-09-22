@@ -145,16 +145,18 @@ it('returns skipped when gitignore entries already present', function () {
     expect($result['gitignore'])->toBe('skipped');
 });
 
-it('appends merge=union entries to an empty gitattributes', function () {
+it('appends merge=map-ai entries to an empty gitattributes', function () {
     $this->installer->install($this->stubsPath, $this->tempDir);
 
     $gitattributes = file_get_contents($this->tempDir.'/.gitattributes');
 
+    foreach (Installer::GITATTRIBUTES_ENTRIES as $entry) {
+        expect($gitattributes)->toContain($entry);
+    }
     expect($gitattributes)
-        ->toContain('docs/BUGS.md merge=union')
-        ->toContain('docs/BUGS_ARCHIVE.md merge=union')
-        ->toContain('docs/ARCHITECTURE_HISTORY.md merge=union')
-        ->toContain('docs/METRICS_HISTORY.md merge=union');
+        ->toContain('docs/BUGS.md merge=map-ai')
+        ->not->toContain('merge=union')
+        ->not->toContain('docs/COMPLIANCE.md');
 });
 
 it('appends gitattributes entries after existing content', function () {
@@ -167,29 +169,76 @@ it('appends gitattributes entries after existing content', function () {
 
     expect($gitattributes)
         ->toStartWith($existing)
-        ->toContain('docs/BUGS.md merge=union');
+        ->toContain('docs/BUGS.md merge=map-ai');
 });
 
-it('does not duplicate gitattributes entries on re-install', function () {
+it('does not duplicate gitattributes entries or the header on re-install', function () {
     $this->installer->install($this->stubsPath, $this->tempDir);
     $this->installer->install($this->stubsPath, $this->tempDir, force: true);
 
     $gitattributes = file_get_contents($this->tempDir.'/.gitattributes');
-    expect(substr_count($gitattributes, 'docs/BUGS.md merge=union'))->toBe(1);
+    expect(substr_count($gitattributes, 'docs/BUGS.md merge=map-ai'))->toBe(1);
+    expect(substr_count($gitattributes, '# MAP — structured markdown merge driver'))->toBe(1);
 });
 
 it('appends only the missing gitattributes entries when some already exist', function () {
-    $partial = "docs/BUGS.md merge=union\ndocs/BUGS_ARCHIVE.md merge=union\ndocs/ARCHITECTURE_HISTORY.md merge=union\n";
+    $partial = "docs/BUGS.md merge=map-ai\ndocs/BUGS_ARCHIVE.md merge=map-ai\n";
     file_put_contents($this->tempDir.'/.gitattributes', $partial);
 
     $result = $this->installer->install($this->stubsPath, $this->tempDir);
 
     $gitattributes = file_get_contents($this->tempDir.'/.gitattributes');
-    expect(substr_count($gitattributes, 'docs/BUGS.md merge=union'))->toBe(1);
-    expect(substr_count($gitattributes, 'docs/BUGS_ARCHIVE.md merge=union'))->toBe(1);
-    expect(substr_count($gitattributes, 'docs/ARCHITECTURE_HISTORY.md merge=union'))->toBe(1);
-    expect($gitattributes)->toContain('docs/METRICS_HISTORY.md merge=union');
+    expect(substr_count($gitattributes, 'docs/BUGS.md merge=map-ai'))->toBe(1);
+    expect(substr_count($gitattributes, 'docs/BUGS_ARCHIVE.md merge=map-ai'))->toBe(1);
+    expect($gitattributes)->toContain('docs/METRICS_HISTORY.md merge=map-ai');
     expect($result['gitattributes'])->toBe('updated');
+});
+
+it('replaces the legacy merge=union entries and leaves the project\'s own attributes alone', function () {
+    $legacy = "* text=auto eol=lf\n\n# MAP — merge-friendly append-only logs\n"
+        .implode("\n", Installer::LEGACY_GITATTRIBUTES_ENTRIES)."\n"
+        ."docs/custom.md merge=union\n";
+    file_put_contents($this->tempDir.'/.gitattributes', $legacy);
+
+    $this->installer->install($this->stubsPath, $this->tempDir);
+
+    $gitattributes = file_get_contents($this->tempDir.'/.gitattributes');
+    foreach (Installer::LEGACY_GITATTRIBUTES_ENTRIES as $entry) {
+        expect($gitattributes)->not->toContain($entry);
+    }
+    expect($gitattributes)
+        ->toStartWith("* text=auto eol=lf\n")
+        ->toContain('docs/custom.md merge=union')
+        ->toContain('docs/BUGS.md merge=map-ai');
+});
+
+it('skips registering the merge driver outside a git repository', function () {
+    $result = $this->installer->install($this->stubsPath, $this->tempDir);
+
+    expect($result['mergeDriver'])->toBe('not-a-repo');
+});
+
+it('registers the merge driver in a git repository, once', function () {
+    shell_exec('git -C '.escapeshellarg($this->tempDir).' init -q 2>&1');
+
+    expect($this->installer->install($this->stubsPath, $this->tempDir)['mergeDriver'])->toBe('updated');
+    expect(Installer::mergeDriverRegistered($this->tempDir))->toBeTrue();
+    expect(trim((string) shell_exec('git -C '.escapeshellarg($this->tempDir).' config --get merge.map-ai.driver')))
+        ->toBe(Installer::MERGE_DRIVER_COMMAND);
+
+    expect($this->installer->install($this->stubsPath, $this->tempDir)['mergeDriver'])->toBe('skipped');
+});
+
+it('keeps lib.sh, the SessionStart hook, and Installer on the same merge driver', function () {
+    $lib = file_get_contents(dirname($this->stubsPath).'/lib.sh');
+    $hook = file_get_contents($this->stubsPath.'/.claude/hooks/map-first-run-check.sh');
+    $line = "MERGE_DRIVER_COMMAND='".Installer::MERGE_DRIVER_COMMAND."'";
+
+    expect($lib)->toContain($line);
+    expect($hook)->toContain($line);
+    foreach (Installer::GITATTRIBUTES_ENTRIES as $entry) {
+        expect($lib)->toContain('"'.$entry.'"');
+    }
 });
 
 it('returns updated for new gitattributes and skipped once present', function () {

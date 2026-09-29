@@ -493,3 +493,106 @@ it('--resolve re-runs the rules on a file git left conflicted, without staging i
 
     removeDir($repo);
 });
+
+it('merges a list both sides edited — removals stay removed, additions kept, renumbered', function () {
+    $base = "# S\n\n## What's next\n1. Webhooks\n2. Refunds\n3. Dunning\n";
+    $ours = "# S\n\n## What's next\n1. Refunds\n2. Dunning\n3. Retries\n";
+    $theirs = "# S\n\n## What's next\n1. Webhooks\n2. Dunning\n3. Partials\n";
+
+    $merge = runMergeDriver($base, $ours, $theirs);
+
+    expect($merge['exit'])->toBe(0);
+    expect($merge['result'])->toBe("# S\n\n## What's next\n1. Dunning\n2. Retries\n3. Partials\n");
+});
+
+it('merges bullet lists without numbering them', function () {
+    $base = "# S\n\n## Notes\n- a\n- b\n";
+    $ours = "# S\n\n## Notes\n- a\n- ours\n";
+    $theirs = "# S\n\n## Notes\n- b\n- theirs\n";
+
+    $merge = runMergeDriver($base, $ours, $theirs);
+
+    expect($merge['exit'])->toBe(0);
+    expect($merge['result'])->toBe("# S\n\n## Notes\n- ours\n- theirs\n");
+});
+
+it('leaves a conflict when both sides reorder the same list differently', function () {
+    $base = "# S\n\n## What's next\n1. A\n2. B\n3. C\n";
+    $ours = "# S\n\n## What's next\n1. C\n2. A\n3. B\n4. D\n";
+    $theirs = "# S\n\n## What's next\n1. B\n2. A\n3. C\n4. E\n";
+
+    $merge = runMergeDriver($base, $ours, $theirs);
+
+    expect($merge['exit'])->not->toBe(0);
+    expect($merge['result'])->toContain('<<<<<<< ours');
+});
+
+$snapshot = '<!-- map-merge: snapshot -->';
+
+it('takes the newer side for a table row both sides changed in a snapshot block', function () use ($snapshot) {
+    $table = "| Indicator | Status |\n|---|---|\n";
+    $base = "# S\n_Last updated: 2026-09-01_\n\n## Project health\n$snapshot\n$table| Tests | 120 |\n| Coverage | 81% |\n| Build | ok |\n";
+    $ours = "# S\n_Last updated: 2026-09-10_\n\n## Project health\n$snapshot\n$table| Tests | 131 |\n| Coverage | 83% |\n| Build | ok |\n";
+    $theirs = "# S\n_Last updated: 2026-09-12_\n\n## Project health\n$snapshot\n$table| Tests | 128 |\n| Coverage | 81% |\n| Build | broken |\n";
+
+    $merge = runMergeDriver($base, $ours, $theirs);
+
+    expect($merge['exit'])->toBe(0);
+    // Tests: both changed → newer (theirs); Coverage/Build: one side changed → that side.
+    expect($merge['result'])->toBe("# S\n_Last updated: 2026-09-12_\n\n## Project health\n$snapshot\n$table| Tests | 128 |\n| Coverage | 83% |\n| Build | broken |\n");
+    expect($merge['stderr'])->toContain('1 snapshot value(s) changed on both branches')->toContain('re-verify');
+});
+
+it('still leaves a conflict for the same row change outside a snapshot block', function () use ($snapshot) {
+    $base = "# S\n_Last updated: 2026-09-01_\n\n## Health\n| K | V |\n|---|---|\n| Tests | 120 |\n\n## Metrics\n$snapshot\nx\n";
+    $ours = "# S\n_Last updated: 2026-09-10_\n\n## Health\n| K | V |\n|---|---|\n| Tests | 131 |\n\n## Metrics\n$snapshot\nx\n";
+    $theirs = "# S\n_Last updated: 2026-09-12_\n\n## Health\n| K | V |\n|---|---|\n| Tests | 128 |\n\n## Metrics\n$snapshot\nx\n";
+
+    $merge = runMergeDriver($base, $ours, $theirs);
+
+    expect($merge['exit'])->not->toBe(0);
+    expect($merge['result'])->toContain('<<<<<<< ours');
+});
+
+it('takes the newer side for prose in a snapshot block, by the block\'s own date first', function () use ($snapshot) {
+    $base = "# C\n\n## Backend\n$snapshot\n**Suite:** 120 tests.\n**Coverage:** 81% (measured 2026-09-01).\n";
+    $ours = "# C\n\n## Backend\n$snapshot\n**Suite:** 131 tests.\n**Coverage:** 83% (measured 2026-09-20).\n";
+    $theirs = "# C\n\n## Backend\n$snapshot\n**Suite:** 128 tests.\n**Coverage:** 82% (measured 2026-09-12).\n";
+
+    $merge = runMergeDriver($base, $ours, $theirs, 'docs/TESTING_COVERAGE.md');
+
+    expect($merge['exit'])->toBe(0);
+    expect($merge['result'])->toBe($ours);
+});
+
+it('treats a marker under the title as covering every section of the file', function () use ($snapshot) {
+    $head = "# C\n\n$snapshot\n\n## Area 1\n| File | % |\n|---|---|\n";
+    $base = "{$head}| a.php | 80% |\n| b.php | 0% |\n\n## Runs\n| Date | % |\n|---|---|\n| 2026-09-01 | 81% |\n";
+    $ours = "{$head}| a.php | 85% |\n| b.php | 92% |\n\n## Runs\n| Date | % |\n|---|---|\n| 2026-09-01 | 81% |\n| 2026-09-10 | 83% |\n";
+    $theirs = "{$head}| a.php | 100% |\n| b.php | 0% |\n\n## Runs\n| Date | % |\n|---|---|\n| 2026-09-01 | 81% |\n| 2026-09-12 | 82% |\n";
+
+    $merge = runMergeDriver($base, $ours, $theirs, 'docs/TESTING_COVERAGE.md');
+
+    expect($merge['exit'])->toBe(0);
+    expect($merge['result'])->toBe("{$head}| a.php | 100% |\n| b.php | 92% |\n\n## Runs\n| Date | % |\n|---|---|\n| 2026-09-01 | 81% |\n| 2026-09-10 | 83% |\n| 2026-09-12 | 82% |\n");
+});
+
+it('keeps a snapshot marker the older side added while the newer side changed the values', function () use ($snapshot) {
+    $base = "# S\n_Last updated: 2026-09-01_\n\n## Health\nTests: 120\n";
+    $ours = "# S\n_Last updated: 2026-09-01_\n\n## Health\n$snapshot\nTests: 120\n"; // e.g. doctor --fix on main
+    $theirs = "# S\n_Last updated: 2026-09-12_\n\n## Health\nTests: 128\n";
+
+    $merge = runMergeDriver($base, $ours, $theirs);
+
+    expect($merge['exit'])->toBe(0);
+    expect($merge['result'])->toBe("# S\n_Last updated: 2026-09-12_\n\n## Health\n$snapshot\nTests: 128\n");
+});
+
+it('ships snapshot markers on the re-measured sections of STATUS.md and TESTING_COVERAGE.md', function () {
+    $status = (string) file_get_contents(Installer::stubsPath().'/docs/STATUS.md');
+    $coverage = (string) file_get_contents(Installer::stubsPath().'/docs/TESTING_COVERAGE.md');
+
+    expect($status)->toMatch('/## Project health\n<!-- map-merge: snapshot/')
+        ->toMatch('/## Metrics snapshot\n<!-- map-merge: snapshot/');
+    expect(strstr($coverage, "\n## ", true))->toContain('<!-- map-merge: snapshot');
+});

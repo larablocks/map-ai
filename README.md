@@ -188,7 +188,15 @@ Each conflicting file goes through up to three passes. Each pass only touches wh
    - two new entries under different headings are both kept, ours first;
    - an entry deleted on one side and untouched on the other stays deleted, so a bug moved to `BUGS_ARCHIVE.md` doesn't come back.
 
-   Inside a block both sides changed, it resolves table rows (3-way by their first cell), pure insertions on both sides (ours, then theirs), and `Last updated` lines (newest date wins). Everything the rules settle is kept, and conflict markers remain only around what they couldn't. If nothing is left, the merge completes as normal.
+   Inside a block both sides changed, it resolves:
+   - table rows, 3-way by their first cell;
+   - list items, 3-way by their text: an item either side removed stays removed, items either side added are kept (ours, then theirs), and numbered lists are renumbered. If both sides reordered the items they both kept, it's left as a conflict;
+   - pure insertions on both sides (ours, then theirs);
+   - `Last updated` lines (newest date wins).
+
+   **Snapshot sections.** Some values are re-measured every session: `STATUS.md`'s health table and metrics snapshot, and everything in `TESTING_COVERAGE.md`. After a merge neither branch's numbers are right for the merged code anyway. These sections carry a `<!-- map-merge: snapshot -->` comment; placed above a file's first `##` heading, it covers the whole file. Where both branches changed the same value there, the side with the newer date wins, checking the section's own dates first, then the whole file's. The merge reports what it took so the next session re-verifies it, and doesn't stop. Changes only one side made are still kept as normal.
+
+   Everything the rules settle is kept, and conflict markers remain only around what they couldn't. If nothing is left, the merge completes as normal.
 3. **Claude, for the rest.** Each remaining conflict goes to Claude (`claude -p`, no tools, run outside the project so its `CLAUDE.md` and hooks don't load). Claude sees base, ours and theirs, the surrounding lines, the file's own header rules, and the commit subjects from both branches.
 
    A resolution is accepted only if all of these hold:

@@ -230,16 +230,74 @@ it('registers the merge driver in a git repository, once', function () {
     expect($this->installer->install($this->stubsPath, $this->tempDir)['mergeDriver'])->toBe('skipped');
 });
 
-it('keeps lib.sh, the SessionStart hook, and Installer on the same merge driver', function () {
+it('keeps lib.sh, the SessionStart hook, and Installer on the same merge driver', function (string $subdir) {
     $lib = file_get_contents(dirname($this->stubsPath).'/lib.sh');
-    $hook = file_get_contents($this->stubsPath.'/.claude/hooks/map-first-run-check.sh');
-    $line = "MERGE_DRIVER_COMMAND='".Installer::MERGE_DRIVER_COMMAND."'";
-
-    expect($lib)->toContain($line);
-    expect($hook)->toContain($line);
+    expect($lib)->toContain("MERGE_DRIVER_COMMAND='".Installer::MERGE_DRIVER_COMMAND."'");
     foreach (Installer::GITATTRIBUTES_ENTRIES as $entry) {
         expect($lib)->toContain('"'.$entry.'"');
     }
+
+    // A project at the repo root, or in a subdirectory of a monorepo: all three
+    // must register the same command, pointing at that project's .map/merge.sh.
+    shell_exec('git init -q '.escapeshellarg($this->tempDir));
+    $project = $subdir === '' ? $this->tempDir : "$this->tempDir/$subdir";
+    @mkdir("$project/.map", 0755, true);
+    copy($this->stubsPath.'/.map/merge.sh', "$project/.map/merge.sh");
+
+    $expected = Installer::mergeDriverCommand($project);
+    expect($expected)->toContain('/'.($subdir === '' ? '' : "$subdir/").'.map/merge.sh"');
+
+    $fromLib = trim((string) shell_exec('bash -c '.escapeshellarg('source '.escapeshellarg(dirname($this->stubsPath).'/lib.sh').' && merge_driver_command '.escapeshellarg($project))));
+    expect($fromLib)->toBe($expected);
+
+    shell_exec('cd '.escapeshellarg($project).' && CLAUDE_PROJECT_DIR=. bash '.escapeshellarg($this->stubsPath.'/.claude/hooks/map-first-run-check.sh').' >/dev/null 2>&1');
+    expect(trim((string) shell_exec('git -C '.escapeshellarg($project).' config --get merge.map-ai.driver')))->toBe($expected);
+    expect(Installer::mergeDriverRegistered($project))->toBeTrue();
+})->with(['repo root' => '', 'monorepo subdirectory' => 'packages/my app']);
+
+it('merges MAP docs through the driver when installed in a monorepo subdirectory', function () {
+    $repo = $this->tempDir;
+    $project = "$repo/packages/app";
+    mkdir($project, 0755, true);
+    $git = fn (string $args) => (string) shell_exec('cd '.escapeshellarg($repo).' && MAP_MERGE_LLM=0 git -c user.name=t -c user.email=t@t '.$args.' 2>&1');
+    $git('init -q -b main');
+    $this->installer->install($this->stubsPath, $project);
+    $git('add -A');
+    $git('commit -qm install');
+
+    $glossary = "$project/docs/GLOSSARY.md";
+    $original = (string) file_get_contents($glossary);
+    $row = '| [Term] | [Plain English definition — include how it is used specifically in this project] |';
+    $git('checkout -qb feature');
+    file_put_contents($glossary, str_replace($row, "$row\n| Theirs | b |", $original));
+    $git('commit -qam theirs');
+    $git('checkout -q main');
+    file_put_contents($glossary, str_replace($row, "$row\n| Ours | a |", $original));
+    $git('commit -qam ours');
+
+    $output = $git('merge --no-edit feature');
+
+    expect($output)->not->toContain('CONFLICT')->not->toContain('No such file');
+    expect((string) file_get_contents($glossary))->toContain('| Ours | a |')->toContain('| Theirs | b |')->not->toContain('<<<<<<<');
+
+    // BUG-N renumbering reads the project's own bug files, not the repo root's.
+    $bugs = "$project/docs/BUGS.md";
+    $original = (string) file_get_contents($bugs);
+    $bug = fn (string $title) => str_replace("\n## Fixed bugs", "\n### BUG-1 — $title\n- x\n\n## Fixed bugs", $original);
+    $git('checkout -qb feature2');
+    file_put_contents($bugs, $bug('Theirs'));
+    $git('commit -qam theirs2');
+    $git('checkout -q main');
+    file_put_contents("$project/docs/BUGS_ARCHIVE.md", file_get_contents("$project/docs/BUGS_ARCHIVE.md")."\n### BUG-1 — 2026-09-10 — Ours, archived\n");
+    file_put_contents($bugs, str_replace("\n## Fixed bugs", "\n### BUG-2 — Ours\n- y\n\n## Fixed bugs", $original));
+    $git('commit -qam ours2');
+
+    $output = $git('merge --no-edit feature2');
+
+    expect($output)->not->toContain('CONFLICT');
+    expect((string) file_get_contents($bugs))->toContain('### BUG-2 — Ours')->toContain('### BUG-3 — Theirs');
+    exec('cd '.escapeshellarg($project).' && bash .map/merge.sh --check-bugs', $out, $exit);
+    expect($exit)->toBe(0);
 });
 
 it('returns updated for new gitattributes and skipped once present', function () {

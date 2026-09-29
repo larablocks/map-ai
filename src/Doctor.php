@@ -8,7 +8,9 @@ namespace larablocks\MapAi;
  *
  * 1. fix() never removes or rewrites a line a developer could have written — it only
  *    adds files/lines that don't exist anywhere yet (missing files, missing gitignore
- *    entries, missing .github/copilot-instructions.md lines).
+ *    entries, missing .github/copilot-instructions.md lines). The one removal is
+ *    .gitattributes lines MAP itself wrote in earlier versions
+ *    (Installer::LEGACY_GITATTRIBUTES_ENTRIES), matched exactly.
  * 2. Anything that would require dropping or reinterpreting existing content
  *    (an out-of-date SCAFFOLD_FILES entry, an AGENTS.md over the token cap, a
  *    copilot-instructions.md regeneration that would lose a line) is check()-only —

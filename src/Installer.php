@@ -12,13 +12,13 @@ class Installer
      * command, and AGENTS.md's session-start ritual self-creates it correctly on first need.
      */
     public const PERSONAL_FILES = [
-        'docs/MEMORY.example.md'                => 'docs/MEMORY.md',
-        'docs/memory/gotchas.example.md'        => 'docs/memory/gotchas.md',
-        'docs/memory/database.example.md'       => 'docs/memory/database.md',
-        'docs/memory/testing.example.md'        => 'docs/memory/testing.md',
-        'docs/memory/environment.example.md'    => 'docs/memory/environment.md',
-        'docs/memory/performance.example.md'    => 'docs/memory/performance.md',
-        'docs/memory/agents.example.md'         => 'docs/memory/agents.md',
+        'docs/MEMORY.example.md' => 'docs/MEMORY.md',
+        'docs/memory/gotchas.example.md' => 'docs/memory/gotchas.md',
+        'docs/memory/database.example.md' => 'docs/memory/database.md',
+        'docs/memory/testing.example.md' => 'docs/memory/testing.md',
+        'docs/memory/environment.example.md' => 'docs/memory/environment.md',
+        'docs/memory/performance.example.md' => 'docs/memory/performance.md',
+        'docs/memory/agents.example.md' => 'docs/memory/agents.md',
     ];
 
     /** Framework-owned files — always kept in sync with the package stubs, never backed up. */
@@ -112,7 +112,9 @@ class Installer
      * entries or table rows, bumping "Last updated", picking the same next BUG-N), then
      * offers Claude what's left — always stopping for review. Covers every file an AI
      * agent writes to, including the ones it only edits with approval (DESIGN/DOCKER/
-     * SETUP/COMPLIANCE, AGENTS.md and the other entry points). Mirrors lib.sh.
+     * SETUP/COMPLIANCE, AGENTS.md and the other entry points). The entry points are
+     * anchored with a leading "/" — a bare "AGENTS.md" would also match nested or
+     * vendored copies anywhere in the tree. Mirrors lib.sh.
      */
     private const GITATTRIBUTES_HEADER = '# MAP — structured markdown merge driver (.map/merge.sh, registered per clone)';
 
@@ -139,19 +141,21 @@ class Installer
         'docs/DOCKER.md merge=map-ai',
         'docs/SETUP.md merge=map-ai',
         'docs/COMPLIANCE.md merge=map-ai',
-        'AGENTS.md merge=map-ai',
-        'CLAUDE.md merge=map-ai',
-        'GEMINI.md merge=map-ai',
+        '/AGENTS.md merge=map-ai',
+        '/CLAUDE.md merge=map-ai',
+        '/GEMINI.md merge=map-ai',
         '.github/copilot-instructions.md merge=map-ai',
         '.claude/rules/*.md merge=map-ai',
     ];
 
     /**
-     * Lines earlier MAP versions wrote. merge=union kept every line from both sides,
-     * which resurrected bugs one branch had moved to BUGS_ARCHIVE.md — removed on
-     * install now that merge=map-ai replaces them.
+     * Lines earlier MAP versions (up to 0.1.9) wrote, header comment included.
+     * merge=union kept every line from both sides, which resurrected bugs one branch
+     * had moved to BUGS_ARCHIVE.md — removed on install now that merge=map-ai replaces
+     * them. The only lines install/fix ever remove, and only as exact matches.
      */
     public const LEGACY_GITATTRIBUTES_ENTRIES = [
+        '# MAP — merge-friendly append-only logs',
         'docs/BUGS.md merge=union',
         'docs/BUGS_ARCHIVE.md merge=union',
         'docs/ARCHITECTURE_HISTORY.md merge=union',
@@ -166,7 +170,21 @@ class Installer
      */
     public const MERGE_DRIVER_NAME = 'MAP structured markdown merge';
 
+    /** The driver command for a project at the root of its git repo — see mergeDriverCommand(). */
     public const MERGE_DRIVER_COMMAND = 'bash "$(git rev-parse --show-toplevel)/.map/merge.sh" %O %A %B %P';
+
+    /**
+     * The driver command for $targetPath. git runs drivers from the repo root, so a
+     * project installed in a subdirectory (a monorepo package) needs that prefix in
+     * the path — without it the command fails, and git leaves only our side of the
+     * file. Mirrors lib.sh's merge_driver_command.
+     */
+    public static function mergeDriverCommand(string $targetPath): string
+    {
+        $prefix = trim((string) self::git($targetPath, ['rev-parse', '--show-prefix']));
+
+        return str_replace('/.map/merge.sh', '/'.$prefix.'.map/merge.sh', self::MERGE_DRIVER_COMMAND);
+    }
 
     public static function stubsPath(): string
     {
@@ -191,7 +209,7 @@ class Installer
     }
 
     /**
-     * @param callable(array{action: 'copy'|'update'|'skip'|'identical'|'missing'|'symlink', file: string, backed_up: bool}): void|null $progress
+     * @param  callable(array{action: 'copy'|'update'|'skip'|'identical'|'missing'|'symlink', file: string, backed_up: bool}): void|null  $progress
      * @return array{
      *     files: list<array{action: 'copy'|'update'|'skip'|'identical'|'missing'|'symlink', file: string, backed_up: bool}>,
      *     gitignore: 'updated'|'skipped',
@@ -236,7 +254,7 @@ class Installer
     }
 
     /**
-     * @param callable(array{action: 'copy'|'skip'|'missing', file: string}): void|null $progress
+     * @param  callable(array{action: 'copy'|'skip'|'missing', file: string}): void|null  $progress
      * @return list<array{action: 'copy'|'skip'|'missing', file: string}>
      */
     public function bootstrapPersonalFiles(string $targetPath, ?callable $progress = null): array
@@ -395,7 +413,7 @@ class Installer
         }
 
         $ok = self::git($targetPath, ['config', 'merge.map-ai.name', self::MERGE_DRIVER_NAME]) !== null
-            && self::git($targetPath, ['config', 'merge.map-ai.driver', self::MERGE_DRIVER_COMMAND]) !== null;
+            && self::git($targetPath, ['config', 'merge.map-ai.driver', self::mergeDriverCommand($targetPath)]) !== null;
 
         return $ok ? 'updated' : 'failed';
     }
@@ -407,7 +425,7 @@ class Installer
 
     public static function mergeDriverRegistered(string $targetPath): bool
     {
-        return trim((string) self::git($targetPath, ['config', '--get', 'merge.map-ai.driver'])) === self::MERGE_DRIVER_COMMAND;
+        return trim((string) self::git($targetPath, ['config', '--get', 'merge.map-ai.driver'])) === self::mergeDriverCommand($targetPath);
     }
 
     /**

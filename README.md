@@ -190,8 +190,13 @@ Each conflicting file goes through up to three passes. Each pass only touches wh
 
    Inside a block both sides changed, it resolves:
    - table rows, 3-way by their first cell;
-   - list items, 3-way by their text: an item either side removed stays removed, items either side added are kept (ours, then theirs), and numbered lists are renumbered. One-line dated entries (`2026-09-10 — …`, as in `docs/memory/shared.md`) count as items. If both sides reordered the items they both kept, it's left as a conflict;
-   - pure insertions on both sides (ours, then theirs);
+   - list items, 3-way by their text:
+     - An item either side removed stays removed.
+     - An item either side added goes right after the item it followed on that side, ours first when both added at the same spot.
+     - An item that starts with the text of an item it replaced (`Ship auth` → `Ship auth v2`) counts as an edit and keeps its place.
+     - Numbered lists are renumbered. One-line dated entries (`2026-09-10 — …`, as in `docs/memory/shared.md`) count as items, and their dates are never touched.
+     - It's left as a conflict if both sides reordered the items they both kept, edited the same item differently, or one side edited an item the other removed;
+   - pure insertions on both sides (ours, then theirs). A one-line row or item that ours already added isn't repeated, but multi-line entries are always kept whole;
    - `Last updated` lines (newest date wins).
 
    **Snapshot sections.** Some values are re-measured every session: `STATUS.md`'s health table and metrics snapshot, and everything in `TESTING_COVERAGE.md`. After a merge neither branch's numbers are right for the merged code anyway. These sections carry a `<!-- map-merge: snapshot -->` comment; placed above a file's first `##` heading, it covers the whole file. Where both branches changed the same value there, the side with the newer date wins, checking the section's own dates first, then the whole file's. The merge reports what it took so the next session re-verifies it, and doesn't stop. Changes only one side made are still kept as normal.
@@ -211,9 +216,9 @@ Each conflicting file goes through up to three passes. Each pass only touches wh
 **Duplicate `BUG-N`.** In `BUGS.md` / `BUGS_ARCHIVE.md`, if both branches used the same number, the entry already on your side keeps it. The other is renumbered to the next free number across both files and both branches. The merge prints what it renumbered so references in `docs/qa/` can be fixed.
 - **Across the two files.** This also applies when your branch already used the number in the other bug file, for example when you found BUG-3 and archived it straight away while they opened a different BUG-3.
 - **Same bug on both branches.** If the number existed before the branches split, both entries are the same bug, for example when both branches fixed and archived it. Renumbering would invent a bug, so the merge stops for review with both entries in place.
-- **When git never runs the driver.** Git only runs a merge driver on a file both branches changed. If one branch touched only `BUGS.md` and the other only `BUGS_ARCHIVE.md`, a clash between them is never seen at merge time. `bash .map/merge.sh --check-bugs` finds these afterwards. The SessionStart hook runs it every Claude Code session and tells Claude, and `doctor` reports `duplicate-bug-number`. `bash .map/merge.sh --fix-bugs` renumbers the copy in `BUGS.md`; the archive is never edited.
+- **When git never runs the driver.** Git only runs a merge driver on a file both branches changed. If one branch touched only `BUGS.md` and the other only `BUGS_ARCHIVE.md`, a clash between them is never seen at merge time. `bash .map/merge.sh --check-bugs` finds these afterwards. The SessionStart hook runs it every Claude Code session and tells Claude, and `doctor` reports `duplicate-bug-number`. `bash .map/merge.sh --fix-bugs` renumbers the copy in `BUGS.md`. The archive is never edited, so a duplicate inside it is reported for you to fix by hand.
 
-**The `map-resolve` skill** (`.claude/skills/map-resolve/`) is the in-session counterpart. When a merge stops, ask Claude Code to resolve or review the conflicts. It reviews what the driver already resolved, resolves what's left itself, walks you through the diff, and only runs `git add` once you confirm. `AGENTS.md` points other tools at the same steps. `bash .map/merge.sh --resolve <file>` re-runs the driver on a file git already left conflicted, for example when the merge ran before the driver was registered.
+**The `map-resolve` skill** (`.claude/skills/map-resolve/`) is the in-session counterpart. When a merge stops, ask Claude Code to resolve or review the conflicts. It reviews what the driver already resolved, resolves what's left itself, walks you through the diff, and only runs `git add` once you confirm. `AGENTS.md` points other tools at the same steps. `bash .map/merge.sh --resolve <file>` re-runs the driver on a file git already left conflicted, for example when the merge ran before the driver was registered. The path can be relative or absolute. It refuses a file deleted on one side and changed on the other; resolve that with `git add` or `git rm`.
 
 Settings, as environment variables or `git config`:
 
@@ -226,7 +231,7 @@ Settings, as environment variables or `git config`:
 
 The Claude pass runs only where the `claude` CLI is installed and signed in. Without it, the rules still run, and the rest is left as markers for you or the `map-resolve` skill.
 
-The driver is plain bash and POSIX awk (stock macOS bash 3.2 works). `.gitattributes` is committed, but the driver's registration lives in `.git/config`, which a clone never copies. So it's registered per clone by `install.sh`, `doctor --fix`/`Doctor::fix()` and `map:install`, and silently by the SessionStart hook on a clone's first Claude Code session. `doctor` reports `merge-driver-not-registered` when it's missing. Unregistered, git just falls back to its normal text merge. Merges made on GitHub (the merge button, merge queues) never run local merge drivers.
+The driver, `install.sh`, `doctor.sh` and the hooks are plain bash and POSIX awk. The test suite runs under stock-macOS-equivalent bash 3.2 with the BWK awk macOS ships, as well as gawk and mawk. CRLF files are handled. A MAP project in a subdirectory of its git repo (a monorepo package) works too: the driver is registered with that subdirectory in its path. `.gitattributes` is committed, but the driver's registration lives in `.git/config`, which a clone never copies. So it's registered per clone by `install.sh`, `doctor --fix`/`Doctor::fix()` and `map:install`, and silently by the SessionStart hook on a clone's first Claude Code session. `doctor` reports `merge-driver-not-registered` when it's missing. Unregistered, git just falls back to its normal text merge. Merges made on GitHub (the merge button, merge queues) never run local merge drivers.
 
 ## Upgrading an existing MAP install
 
@@ -294,7 +299,7 @@ Real content (bug entries, schema tables, decision records, filled-in commands) 
 ./doctor.sh /path/to/project --interactive   # same fixable set as --fix, confirmed one file at a time
 ```
 
-Report-only mode exits `1` on any finding at all (fixable or not) — CI-friendly, since any drift is worth surfacing. `--fix` mode exits `0` once everything it can apply is applied, `1` only if a review-only finding remains. `--interactive` still applies missing files/`.gitignore`/`.gitattributes` entries unattended (there's no existing content they could touch), but shows each scaffold file's fixable hunks — and the `.github/copilot-instructions.md` regeneration — and asks `[Y/n]` before writing, one prompt per file with all of that file's changes together, not one prompt per hunk.
+Report-only mode exits `1` on any finding at all (fixable or not) — CI-friendly, since any drift is worth surfacing. `--fix` mode exits `0` once everything it can apply is applied, `1` only if a review-only finding remains. `--interactive` still applies missing files/`.gitignore`/`.gitattributes` entries unattended (there's no existing content they could touch, apart from removing the `merge=union` lines and their header that MAP itself wrote up to 0.1.9), but shows each scaffold file's fixable hunks — and the `.github/copilot-instructions.md` regeneration — and asks `[Y/n]` before writing, one prompt per file with all of that file's changes together, not one prompt per hunk.
 
 `doctor.sh` sources `lib.sh` for the `MANAGED_FILES`/`SCAFFOLD_FILES` lists (the same ones `install.sh` and `Installer.php` use — kept in sync by an automated test), and shells out to `install.sh` internally for the missing-file/gitignore/gitattributes repairs rather than reimplementing that logic a third time.
 

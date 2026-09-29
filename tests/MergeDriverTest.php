@@ -596,3 +596,172 @@ it('ships snapshot markers on the re-measured sections of STATUS.md and TESTING_
         ->toMatch('/## Metrics snapshot\n<!-- map-merge: snapshot/');
     expect(strstr($coverage, "\n## ", true))->toContain('<!-- map-merge: snapshot');
 });
+
+/**
+ * A repo whose $path conflicts between main ("ours") and feature ("theirs"),
+ * merged with no driver registered so git leaves the conflict. Returns the repo
+ * dir and a git runner. $ours/$theirs of null delete the file on that side.
+ *
+ * @return array{0: string, 1: Closure(string): string}
+ */
+function conflictedRepo(string $path, string $base, ?string $ours, ?string $theirs): array
+{
+    $repo = sys_get_temp_dir().'/map-ai-merge-conflicted-'.uniqid();
+    mkdir(dirname("$repo/$path"), 0755, true);
+    mkdir("$repo/.map", 0755, true);
+    copy(Installer::stubsPath().'/.map/merge.sh', "$repo/.map/merge.sh");
+    $git = fn (string $args) => (string) shell_exec('cd '.escapeshellarg($repo).' && git -c user.name=t -c user.email=t@t '.$args.' 2>&1');
+    $write = function (?string $content) use ($repo, $path, $git) {
+        $content === null ? $git('rm -q '.escapeshellarg($path)) : file_put_contents("$repo/$path", $content);
+    };
+
+    $git('init -q -b main');
+    file_put_contents("$repo/$path", $base);
+    $git('add -A');
+    $git('commit -qm base');
+    $git('checkout -qb feature');
+    $write($theirs);
+    $git('commit -qam theirs');
+    $git('checkout -q main');
+    $write($ours);
+    $git('commit -qam ours');
+    $git('merge --no-edit feature');
+
+    return [$repo, $git];
+}
+
+function runResolve(string $repo, string $cwd, string $path): array
+{
+    $process = proc_open(['bash', "$repo/.map/merge.sh", '--resolve', $path], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $cwd,
+        ['PATH' => getenv('PATH'), 'HOME' => getenv('HOME'), 'MAP_MERGE_LLM' => '0']);
+    stream_get_contents($pipes[1]);
+    $stderr = (string) stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    return ['exit' => proc_close($process), 'stderr' => $stderr];
+}
+
+it('--resolve takes an absolute path or one relative to a subdirectory', function (string $how) {
+    $base = "# AH\n\n### 2026-01-01 — One\nx\n";
+    [$repo, $git] = conflictedRepo('docs/ARCHITECTURE_HISTORY.md', $base, "$base\n### 2026-02-01 — Ours\nz\n", "$base\n### 2026-02-02 — Theirs\ny\n");
+    [$cwd, $path] = match ($how) {
+        'absolute' => ['/', "$repo/docs/ARCHITECTURE_HISTORY.md"],
+        'from a subdirectory' => ["$repo/docs", 'ARCHITECTURE_HISTORY.md'],
+    };
+
+    $run = runResolve($repo, $cwd, $path);
+
+    expect($run['exit'])->toBe(0, $run['stderr']);
+    expect(file_get_contents("$repo/docs/ARCHITECTURE_HISTORY.md"))->toBe("$base\n### 2026-02-01 — Ours\nz\n\n### 2026-02-02 — Theirs\ny\n");
+    removeDir($repo);
+})->with(['absolute', 'from a subdirectory']);
+
+it('--resolve refuses a file deleted on one side instead of treating it as empty', function () {
+    $base = "# AH\n\n### 2026-01-01 — One\nx\n";
+    [$repo] = conflictedRepo('docs/ARCHITECTURE_HISTORY.md', $base, "$base\n### 2026-02-01 — Ours\nz\n", null);
+    $before = file_get_contents("$repo/docs/ARCHITECTURE_HISTORY.md");
+
+    $run = runResolve($repo, $repo, 'docs/ARCHITECTURE_HISTORY.md');
+
+    expect($run['exit'])->toBe(2);
+    expect($run['stderr'])->toContain('deleted on one side');
+    expect(file_get_contents("$repo/docs/ARCHITECTURE_HISTORY.md"))->toBe($before);
+    removeDir($repo);
+});
+
+it('keeps both multi-line entries whole when both sides insert at the same spot', function () {
+    $base = "# Gotchas\n\n## Entries\n- old\n";
+    $entry = fn (string $what) => "- $what\n  - **Fix:** restart docker\n  ```bash\n  make up\n  ```\n";
+    $ours = $base.$entry('ours thing');
+    $theirs = $base.$entry('theirs thing');
+
+    $merge = runMergeDriver($base, $ours, $theirs, 'docs/memory/shared.md');
+
+    expect($merge['exit'])->toBe(0);
+    expect($merge['result'])->toBe($base.$entry('ours thing').$entry('theirs thing'));
+});
+
+it('never renumbers the years of dated one-line entries', function () {
+    $base = "# shared\n\n2026-09-01 — a\n2026-09-02 — b\n2026-09-03 — c\n";
+    $ours = "# shared\n\n2026-09-01 — a\n2026-09-03 — c\n2026-09-10 — ours new\n";
+    $theirs = "# shared\n\n2026-09-01 — a\n2026-09-02 — b\n2026-09-11 — theirs new\n";
+
+    $merge = runMergeDriver($base, $ours, $theirs, 'docs/memory/shared.md');
+
+    expect($merge['exit'])->toBe(0);
+    expect($merge['result'])->toBe("# shared\n\n2026-09-01 — a\n2026-09-10 — ours new\n2026-09-11 — theirs new\n");
+});
+
+it('keeps list items in place when each side edits a different item', function () {
+    $base = "# S\n\n## Next\n1. Ship auth\n2. Ship billing\n";
+    $ours = "# S\n\n## Next\n1. Ship auth\n2. Ship billing (blocked on Stripe)\n";
+    $theirs = "# S\n\n## Next\n1. Ship auth v2\n2. Ship billing\n";
+
+    $merge = runMergeDriver($base, $ours, $theirs);
+
+    expect($merge['exit'])->toBe(0);
+    expect($merge['result'])->toBe("# S\n\n## Next\n1. Ship auth v2\n2. Ship billing (blocked on Stripe)\n");
+});
+
+it('places an item added mid-list after the item it followed', function () {
+    $base = "# S\n\n## Next\n1. A\n2. B\n3. C\n";
+    $ours = "# S\n\n## Next\n1. A\n2. A2\n3. B\n4. C\n";
+    $theirs = "# S\n\n## Next\n1. A\n2. B\n3. C\n4. D\n";
+
+    $merge = runMergeDriver($base, $ours, $theirs);
+
+    expect($merge['exit'])->toBe(0);
+    expect($merge['result'])->toBe("# S\n\n## Next\n1. A\n2. A2\n3. B\n4. C\n5. D\n");
+});
+
+it('leaves a conflict when both sides edit the same list item, or one edits what the other removed', function (string $ours, string $theirs) {
+    $base = "# S\n\n## Next\n1. Ship auth\n2. Ship billing\n";
+
+    $merge = runMergeDriver($base, "# S\n\n## Next\n$ours", "# S\n\n## Next\n$theirs");
+
+    expect($merge['exit'])->not->toBe(0);
+    expect($merge['result'])->toContain('<<<<<<< ours');
+})->with([
+    'both edited' => ["1. Ship auth (done)\n2. Ship billing\n3. X\n", "1. Ship auth — cancelled\n2. Ship billing\n3. Y\n"],
+    'edited vs removed' => ["1. Ship auth (done)\n2. Ship billing\n3. X\n", "1. Ship billing\n2. Y\n"],
+]);
+
+it('resolves CRLF files with the same rules and keeps their line endings', function () {
+    $crlf = fn (string $s) => str_replace("\n", "\r\n", $s);
+    $base = $crlf("# FF\n_Last updated: 2026-01-01_\n\n## Active flags\n| Flag | Purpose |\n|---|---|\n| a | x |\n");
+    $ours = $crlf("# FF\n_Last updated: 2026-03-01_\n\n## Active flags\n| Flag | Purpose |\n|---|---|\n| a | x |\n| ours | y |\n");
+    $theirs = $crlf("# FF\n_Last updated: 2026-02-01_\n\n## Active flags\n| Flag | Purpose |\n|---|---|\n| a | changed |\n| theirs | z |\n");
+
+    $merge = runMergeDriver($base, $ours, $theirs, 'docs/FEATURE_FLAGS.md');
+
+    expect($merge['exit'])->toBe(0);
+    expect($merge['result'])->toBe($crlf("# FF\n_Last updated: 2026-03-01_\n\n## Active flags\n| Flag | Purpose |\n|---|---|\n| a | changed |\n| ours | y |\n| theirs | z |\n"));
+});
+
+it('keeps headings that differ only after a tab apart', function () {
+    $base = "# T\n\n## One\tx\na\n\n## One\ty\nb\n";
+    $ours = "# T\n\n## One\tx\na ours\n\n## One\ty\nb\n";
+    $theirs = "# T\n\n## One\tx\na\n\n## One\ty\nb theirs\n";
+
+    $merge = runMergeDriver($base, $ours, $theirs, 'docs/GLOSSARY.md');
+
+    expect($merge['exit'])->toBe(0);
+    expect($merge['result'])->toBe("# T\n\n## One\tx\na ours\n\n## One\ty\nb theirs\n");
+});
+
+it('--fix-bugs never edits the archive — a duplicate inside it is left for a human', function () {
+    $dir = sys_get_temp_dir().'/map-ai-fix-bugs-'.uniqid();
+    mkdir("$dir/docs", 0755, true);
+    $archive = "# BUGS_ARCHIVE.md\n\n### BUG-3 — 2026-01-01 — one ✓\nx\n\n### BUG-3 — 2026-01-02 — two ✓\ny\n";
+    file_put_contents("$dir/docs/BUGS_ARCHIVE.md", $archive);
+    file_put_contents("$dir/docs/BUGS.md", "# BUGS.md\n\n## Open bugs\n### BUG-3 — open copy\nz\n");
+
+    exec('cd '.escapeshellarg($dir).' && bash '.escapeshellarg(Installer::stubsPath().'/.map/merge.sh').' --fix-bugs 2>&1', $out, $exit);
+
+    expect($exit)->toBe(1);
+    expect(implode("\n", $out))->toContain('never edited automatically');
+    expect(file_get_contents("$dir/docs/BUGS_ARCHIVE.md"))->toBe($archive);
+    expect(file_get_contents("$dir/docs/BUGS.md"))->toContain('### BUG-4 — open copy');
+    removeDir($dir);
+});

@@ -183,14 +183,14 @@ MAP docs are edited on every branch, so they conflict on merge more than most fi
 
 Each conflicting file goes through up to three passes. Each pass only touches what the one before couldn't settle:
 
-1. **Git's own merge.** If git merges the file cleanly, that result is used unchanged. The only addition is renumbering duplicate `BUG-N`s, below.
+1. **Git's own merge.** If git merges the file cleanly, that result is used unchanged. The only addition is renumbering duplicate `BUG-N`s, below. One check comes first. Git matches identical lines, and MAP entries repeat the same field lines (`- **Status:** open`), so a "clean" merge can land an edit in the wrong entry. For example, one branch archives BUG-1 while the other updates BUG-1's status, and git applies that status change to BUG-2. So the result is only used if every entry neither branch touched comes out unchanged, and every entry one branch changed comes out as that branch's version. Otherwise the file goes to pass 2.
 2. **Deterministic rules.** Each side is split into blocks at markdown headings (headings inside code fences and HTML comments don't count) and merged block by block:
    - two new entries under different headings are both kept, ours first;
    - an entry deleted on one side and untouched on the other stays deleted, so a bug moved to `BUGS_ARCHIVE.md` doesn't come back.
 
    Inside a block both sides changed, it resolves:
    - table rows, 3-way by their first cell;
-   - list items, 3-way by their text: an item either side removed stays removed, items either side added are kept (ours, then theirs), and numbered lists are renumbered. If both sides reordered the items they both kept, it's left as a conflict;
+   - list items, 3-way by their text: an item either side removed stays removed, items either side added are kept (ours, then theirs), and numbered lists are renumbered. One-line dated entries (`2026-09-10 — …`, as in `docs/memory/shared.md`) count as items. If both sides reordered the items they both kept, it's left as a conflict;
    - pure insertions on both sides (ours, then theirs);
    - `Last updated` lines (newest date wins).
 
@@ -209,6 +209,9 @@ Each conflicting file goes through up to three passes. Each pass only touches wh
 **Nothing Claude wrote is committed unseen.** When the merge needed Claude, it always stops before committing, even if every conflict was resolved: the files have no markers but are still marked unmerged. Review with `git diff`, then `git add` and commit. `git checkout --conflict=diff3 -- <file>` restores the raw markers if you'd rather start over. Merges the rules fully resolve complete on their own.
 
 **Duplicate `BUG-N`.** In `BUGS.md` / `BUGS_ARCHIVE.md`, if both branches used the same number, the entry already on your side keeps it. The other is renumbered to the next free number across both files and both branches. The merge prints what it renumbered so references in `docs/qa/` can be fixed.
+- **Across the two files.** This also applies when your branch already used the number in the other bug file, for example when you found BUG-3 and archived it straight away while they opened a different BUG-3.
+- **Same bug on both branches.** If the number existed before the branches split, both entries are the same bug, for example when both branches fixed and archived it. Renumbering would invent a bug, so the merge stops for review with both entries in place.
+- **When git never runs the driver.** Git only runs a merge driver on a file both branches changed. If one branch touched only `BUGS.md` and the other only `BUGS_ARCHIVE.md`, a clash between them is never seen at merge time. `bash .map/merge.sh --check-bugs` finds these afterwards. The SessionStart hook runs it every Claude Code session and tells Claude, and `doctor` reports `duplicate-bug-number`. `bash .map/merge.sh --fix-bugs` renumbers the copy in `BUGS.md`; the archive is never edited.
 
 **The `map-resolve` skill** (`.claude/skills/map-resolve/`) is the in-session counterpart. When a merge stops, ask Claude Code to resolve or review the conflicts. It reviews what the driver already resolved, resolves what's left itself, walks you through the diff, and only runs `git add` once you confirm. `AGENTS.md` points other tools at the same steps. `bash .map/merge.sh --resolve <file>` re-runs the driver on a file git already left conflicted, for example when the merge ran before the driver was registered.
 
@@ -267,6 +270,7 @@ $doctor->applyHunks('/path/to/project/docs/GLOSSARY.md', $hunks);
 | `false` | `outdated-scaffold-file` | A `SCAFFOLD_FILES` entry differs from the stub in a way that isn't a pure addition or a safe note/comment swap — likely real project content, needs a human diff and merge |
 | `false` | `agents-md-too-long` | `AGENTS.md` is over the 3,000-token cap (bytes ÷ 4) — which sections to cut is a judgment call |
 | `true` | `merge-driver-not-registered` | The clone's `.git/config` doesn't register `merge.map-ai` — `.gitattributes` routes MAP docs to it, but git falls back to its normal text merge until it's registered |
+| `false` | `duplicate-bug-number` | A `BUG-N` heading is used twice across `docs/BUGS.md` / `docs/BUGS_ARCHIVE.md` — usually a merge where each branch only touched one of the two files, so the merge driver never ran. Whether the entries are the same bug is a judgement call: different bugs → `bash .map/merge.sh --fix-bugs`, same bug → remove the stale entry |
 | `false` | `token-hook-not-registered` | `.claude/settings.json` exists but doesn't register `map-token-check.sh` — the file is copy-if-absent and may hold unrelated hooks/permissions, so the entries are copied in by hand (a missing `settings.json` is reported as a fixable `missing-file` instead) |
 | `false` | `copilot-out-of-sync` (unsafe case) | Regenerating `.github/copilot-instructions.md` would drop a line currently in the file — likely a hand edit, or content since removed upstream |
 

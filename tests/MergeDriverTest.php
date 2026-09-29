@@ -301,7 +301,7 @@ function fakeClaude(string $reply, int $sleep = 0): array
     $dir = sys_get_temp_dir().'/map-ai-fake-claude-'.uniqid();
     mkdir($dir, 0755, true);
     file_put_contents("$dir/reply", $reply);
-    file_put_contents("$dir/fake.sh", "cat > ".escapeshellarg("$dir/prompt")."\n".($sleep ? "sleep $sleep\n" : '')."cat ".escapeshellarg("$dir/reply")."\n");
+    file_put_contents("$dir/fake.sh", 'cat > '.escapeshellarg("$dir/prompt")."\n".($sleep ? "sleep $sleep\n" : '').'cat '.escapeshellarg("$dir/reply")."\n");
 
     return ['command' => 'bash '.escapeshellarg("$dir/fake.sh"), 'prompt' => "$dir/prompt", 'dir' => $dir];
 }

@@ -94,7 +94,64 @@ class Doctor
             $findings[] = $finding;
         }
 
+        foreach (self::duplicateBugNumbers($targetPath) as $number => $files) {
+            $findings[] = [
+                'id' => 'duplicate-bug-number',
+                'fixable' => false,
+                'file' => implode(' + ', array_unique($files)),
+                'message' => "BUG-$number is used twice — usually a merge where both branches picked it. Different bugs: run `bash .map/merge.sh --fix-bugs` (renumbers the docs/BUGS.md copy), then update references in docs/qa/*.md. Same bug: remove the stale entry.",
+            ];
+        }
+
         return $findings;
+    }
+
+    /**
+     * BUG-N headings (outside code fences and HTML comments) used more than once
+     * across docs/BUGS_ARCHIVE.md and docs/BUGS.md. The merge driver renumbers
+     * these, but git only runs it on a file both branches changed — one branch
+     * adding BUG-3 to BUGS.md while the other archived its own BUG-3 never
+     * reaches it. Mirrors `.map/merge.sh --check-bugs`.
+     *
+     * @return array<int, list<string>> number => files it appears in, one entry per heading
+     */
+    public static function duplicateBugNumbers(string $targetPath): array
+    {
+        $seen = [];
+
+        foreach (['docs/BUGS_ARCHIVE.md', 'docs/BUGS.md'] as $file) {
+            if (! is_file("$targetPath/$file")) {
+                continue;
+            }
+
+            $fence = false;
+            $comment = false;
+            foreach (explode("\n", (string) file_get_contents("$targetPath/$file")) as $line) {
+                if (preg_match('/^\s*(```|~~~)/', $line)) {
+                    $fence = ! $fence;
+
+                    continue;
+                }
+                if ($fence) {
+                    continue;
+                }
+                if ($comment) {
+                    $comment = ! str_contains($line, '-->');
+
+                    continue;
+                }
+                if (str_contains($line, '<!--') && ! str_contains($line, '-->')) {
+                    $comment = true;
+
+                    continue;
+                }
+                if (preg_match('/^#+\s+BUG-(\d+)/', $line, $m)) {
+                    $seen[(int) $m[1]][] = $file;
+                }
+            }
+        }
+
+        return array_filter($seen, fn (array $files) => count($files) > 1);
     }
 
     /**

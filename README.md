@@ -86,7 +86,7 @@ Every working file in MAP has a size ceiling enforced by the AI's own write rule
 
 Beyond size caps, the structure itself controls what gets loaded:
 
-**Selective loading, not full context at startup.** `AGENTS.md`'s "Load when relevant" section tells the AI which files to read for which tasks. A session fixing a bug doesn't load `ARCHITECTURE.md` or `SCHEMA.md`. A session touching the database doesn't load `DOCKER.md`. Files are pulled on demand.
+**Selective loading, not full context at startup.** `AGENTS.md`'s "Load when relevant" section tells the AI which files to read for which tasks. A session fixing a bug doesn't load `ARCHITECTURE.md` or `SCHEMA.md`. A session touching the database doesn't load `DOCKER.md`. Files are pulled on demand. That's why those lines use plain paths: an `@docs/...` import in Claude Code or Gemini CLI loads the file at session start no matter what the rule says. Only the session start ritual's files (`STATUS.md`, `MEMORY.md`, `BUGS.md`) and `CLAUDE.local.md` are `@`-imported.
 
 **Index before content.** `MEMORY.md` is a one-page index — a table of topic files and entry counts. The AI reads it first to know what knowledge exists, then loads only the topic file relevant to the current task. `docs/memory/database.md` is never loaded during a UI fix.
 

@@ -21,27 +21,28 @@ Load @CLAUDE.local.md if it exists or equivalent local rules file for your tool 
 _If any command above still shows a `[...]` placeholder, detect it by reading composer.json, package.json, and Makefile, then replace the placeholder in this file._
 
 ## Load when relevant
-Read @docs/ARCHITECTURE.md when working on structure or new features
-Read `docs/ARCHITECTURE_HISTORY.md` (not @-imported: too large to load every session) when revisiting an architectural choice
-Read @docs/CODE_PATTERNS.md when writing application code, migrations, config or scripts
-Read @docs/SCHEMA.md when touching the database or internal service contracts
-Read @docs/COMPLIANCE.md when touching data classified as sensitive, exports, deletions, or third-party data integrations
-Read @docs/BUGS.md when writing tests or modifying areas with known issues
-Read `docs/TESTING_COVERAGE.md` (not @-imported: too large to load every session) when writing or reviewing tests
-Read @docs/DOCKER.md when running commands or diagnosing environment issues (skip if project has no Docker)
-Read @docs/SETUP.md when helping with local dev or onboarding questions
-Read @docs/GLOSSARY.md when domain-specific terms or abbreviations are unfamiliar
-Read @docs/COMMANDS.md when running or referencing a custom project command
-Read @docs/DESIGN.md when writing frontend code or UI components (skip if no UI layer) — it wins over conflicting code by default; once per session, run `npx @google/design.md lint` first if available, skip silently if not
+_Plain paths on purpose, not @-imports — an @-import loads every session. Read each file only when its rule applies_
+Read docs/ARCHITECTURE.md when working on structure or new features
+Read docs/ARCHITECTURE_HISTORY.md when revisiting an architectural choice
+Read docs/CODE_PATTERNS.md when writing application code, migrations, config or scripts
+Read docs/SCHEMA.md when touching the database or internal service contracts
+Read docs/COMPLIANCE.md when touching data classified as sensitive, exports, deletions, or third-party data integrations
+Read docs/BUGS.md when writing tests or modifying areas with known issues
+Read docs/TESTING_COVERAGE.md when writing or reviewing tests
+Read docs/DOCKER.md when running commands or diagnosing environment issues (skip if project has no Docker)
+Read docs/SETUP.md when helping with local dev or onboarding questions
+Read docs/GLOSSARY.md when domain-specific terms or abbreviations are unfamiliar
+Read docs/COMMANDS.md when running or referencing a custom project command
+Read docs/DESIGN.md when writing frontend code or UI components (skip if no UI layer) — it wins over conflicting code by default; once per session, run `npx @google/design.md lint` first if available, skip silently if not
 Read the project's stack-specific memory file (see docs/MEMORY.md's summary table for its filename) when writing application code, migrations, config or scripts — past surprises; if the table still shows the `[stack].md` placeholder row, self-create the file by copying docs/memory/framework.example.md to a name matching the project's stack (e.g. laravel.md) and update that row
-Read @docs/memory/agents.md when working on agent pipeline (skip if no agents)
-Read @docs/memory/database.md when touching the database or schema
-Read @docs/memory/testing.md when writing or debugging tests
-Read @docs/memory/environment.md when diagnosing environment issues
-Read @docs/memory/performance.md when investigating slow behaviour or optimising code
-Read @docs/FEATURE_FLAGS.md when starting a new feature or working on flagged code
+Read docs/memory/agents.md when working on agent pipeline (skip if no agents)
+Read docs/memory/database.md when touching the database or schema
+Read docs/memory/testing.md when writing or debugging tests
+Read docs/memory/environment.md when diagnosing environment issues
+Read docs/memory/performance.md when investigating slow behaviour or optimising code
+Read docs/FEATURE_FLAGS.md when starting a new feature or working on flagged code
 Working on an agent, API, integration, or component → scan the frontmatter (name + description) across docs/agents/, docs/api/, docs/integrations/, docs/architecture/ for the matching file, then load only that file's full body
-Read @docs/qa/[ticket-or-slug].md when reviewing or testing a recently completed feature
+Read docs/qa/[ticket-or-slug].md when reviewing or testing a recently completed feature
 
 ## Write rules — do these immediately, without being asked
 _Priority order: BUGS.md first, then ARCHITECTURE_HISTORY.md, then others_

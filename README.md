@@ -82,7 +82,7 @@ The result is documentation that reflects what is actually true about the projec
 
 ## Designed for lean context
 
-Every working file in MAP has a size ceiling enforced by the AI's own write rules (the deliberate exceptions are the append-only logs — `ARCHITECTURE_HISTORY.md`, `BUGS_ARCHIVE.md`, and `METRICS_HISTORY.md` — which have no size limit and are never summarised; see below). `AGENTS.md` stays under 3,000 tokens (estimated as bytes ÷ 4) — measured in tokens, not lines, because it loads every session and one long line costs as much as many short ones. `docs/memory/gotchas.md` caps at ~750 tokens and `docs/memory/shared.md` at ~1,500 (both load every session). Other memory topic files cap at ~2,500 tokens. In Claude Code, `.claude/hooks/map-token-check.sh` enforces all of these: at session start, and immediately after any edit that pushes a capped file over its cap. When a file fills up, the AI summarises or removes before adding — so files stay dense and high-signal rather than growing without bound.
+Every working file in MAP has a size ceiling enforced by the AI's own write rules (the deliberate exceptions are the append-only logs — `ARCHITECTURE_HISTORY.md`, `BUGS_ARCHIVE.md`, `STATUS_ARCHIVE.md`, and `METRICS_HISTORY.md` — which have no size limit and are never summarised; see below). `AGENTS.md` stays under 3,000 tokens (estimated as bytes ÷ 4) — measured in tokens, not lines, because it loads every session and one long line costs as much as many short ones. `docs/memory/gotchas.md` caps at ~750 tokens and `docs/memory/shared.md` at ~1,500 (both load every session). Other memory topic files cap at ~2,500 tokens. In Claude Code, `.claude/hooks/map-token-check.sh` enforces all of these: at session start, and immediately after any edit that pushes a capped file over its cap. When a file fills up, the AI summarises or removes before adding — so files stay dense and high-signal rather than growing without bound.
 
 Beyond size caps, the structure itself controls what gets loaded:
 
@@ -336,6 +336,7 @@ docs/DOCKER.md                     — container reference (Claude proposes, dev
 docs/SETUP.md                      — local dev setup for new developers (Claude proposes, developer approves)
 docs/TESTING_COVERAGE.md           — coverage tracking (AI-maintained from output)
 docs/METRICS_HISTORY.md            — dated metrics log for leadership (AI-maintained, append-only)
+docs/STATUS_ARCHIVE.md             — older STATUS.md progress entries (append-only, not loaded each session)
 
 docs/MEMORY.example.md             — memory index template (copy to MEMORY.md)
 docs/memory/gotchas.example.md     — critical mistakes to avoid

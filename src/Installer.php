@@ -81,6 +81,7 @@ class Installer
         'docs/SCHEMA.md',
         'docs/SETUP.md',
         'docs/STATUS.md',
+        'docs/STATUS_ARCHIVE.md',
         'docs/TESTING_COVERAGE.md',
     ];
 
@@ -124,6 +125,7 @@ class Installer
         'docs/ARCHITECTURE_HISTORY.md merge=map-ai',
         'docs/METRICS_HISTORY.md merge=map-ai',
         'docs/STATUS.md merge=map-ai',
+        'docs/STATUS_ARCHIVE.md merge=map-ai',
         'docs/ARCHITECTURE.md merge=map-ai',
         'docs/CODE_PATTERNS.md merge=map-ai',
         'docs/COMMANDS.md merge=map-ai',

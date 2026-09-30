@@ -422,7 +422,7 @@ it('merges a rolling "last N" progress list both branches trimmed and appended t
     ]);
 
     expectCleanMerge($result);
-    expect($result['docs']->read('docs/STATUS.md'))->toContain("## Last meaningful progress\n- Invoice PDF export\n- Stripe webhooks\n- Refunds API\n");
+    expect($result['docs']->read('docs/STATUS.md'))->toMatch("/## Last meaningful progress\n_[^\n]*_\n- Invoice PDF export\n- Stripe webhooks\n- Refunds API\n/");
 });
 
 it('merges the coverage to-do list both branches worked through', function () use ($seedProject) {

@@ -127,6 +127,20 @@ it('blocks after an edit pushes a memory file over its cap', function () {
     expect($json['reason'])->toContain('docs/memory/shared.md is ~1501 tokens (cap 1500)');
 });
 
+it('tells Claude to archive old progress entries when STATUS.md is over its cap', function () {
+    mkdir($this->tempDir.'/docs', 0755, true);
+    file_put_contents($this->tempDir.'/docs/STATUS.md', str_repeat('x', 5001 * 4));
+    file_put_contents($this->tempDir.'/docs/STATUS_ARCHIVE.md', str_repeat('x', 50000 * 4));
+
+    $context = json_decode(runTokenHook($this->tempDir)['output'], true)['hookSpecificOutput']['additionalContext'];
+
+    expect($context)
+        ->toContain('docs/STATUS.md is ~5001 tokens (cap 5000)')
+        ->toContain('to docs/STATUS_ARCHIVE.md verbatim')
+        ->not->toContain('STATUS_ARCHIVE.md is')
+        ->not->toContain('Memory files: trim them');
+});
+
 it('never caps memory example files or the append-only logs', function () {
     mkdir($this->tempDir.'/docs/memory', 0755, true);
     file_put_contents($this->tempDir.'/docs/memory/gotchas.example.md', $this->overCap);

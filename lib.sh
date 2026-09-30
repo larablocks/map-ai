@@ -67,7 +67,7 @@ SCAFFOLD_FILES=(
   GEMINI.md
   .claude/rules/security.md
   .claude/rules/testing.md
-  .claude/skills/example-skill/SKILL.md
+  .claude/skills/example-skill/SKILL.example.md
   .github/copilot-instructions.md
   docs/ARCHITECTURE.md
   docs/ARCHITECTURE_HISTORY.md

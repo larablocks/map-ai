@@ -44,7 +44,7 @@ it('copies all files to the target directory', function () {
     expect($this->tempDir.'/docs/COMMANDS.md')->toBeFile();
     expect($this->tempDir.'/.claude/rules/security.md')->toBeFile();
     expect($this->tempDir.'/.claude/rules/testing.md')->toBeFile();
-    expect($this->tempDir.'/.claude/skills/example-skill/SKILL.md')->toBeFile();
+    expect($this->tempDir.'/.claude/skills/example-skill/SKILL.example.md')->toBeFile();
     expect($this->tempDir.'/.github/copilot-instructions.md')->toBeFile();
     expect($this->tempDir.'/docs/memory/gotchas.example.md')->toBeFile();
 });

@@ -311,7 +311,7 @@ CLAUDE.md                          — Claude Code entry point (@AGENTS.md)
 GEMINI.md                          — Gemini CLI entry point (@AGENTS.md)
 .claude/rules/security.md          — security rules, auto-loaded every session
 .claude/rules/testing.md           — coverage and test quality rules, auto-loaded
-.claude/skills/example-skill/SKILL.md — template for a Claude Code skill (auto-discovered, no wiring needed)
+.claude/skills/example-skill/SKILL.example.md — template for a Claude Code skill (rename to SKILL.md in a copied folder; auto-discovered, no wiring needed)
 .github/copilot-instructions.md    — Copilot entry point (AGENTS.md inlined)
 .cursor/rules/agents.mdc           — Cursor entry point (@AGENTS.md)
 .claude/settings.json              — registers the MAP hooks below (copied only if absent)
@@ -359,7 +359,7 @@ docs/qa/qa.example.md              — template for a completed feature's QA not
 
 `docs/agents/`, `docs/api/`, `docs/integrations/`, and `docs/architecture/` can hold many files — one per agent, endpoint, integration, or component. Each one starts with plain YAML frontmatter (`name` + `description`), the same progressive-disclosure idea behind Claude Code's `SKILL.md` files: scan the cheap part across every file in the folder to find the one that matches, then load only that file's full body. It's plain YAML in a markdown file, so every MAP-supported tool can use or ignore it — this is a MAP-internal convention for keeping "load when relevant" cheap at scale, not a claim of compatibility with Claude Code's native Skill discovery, which is a separate mechanism scoped to `.claude/skills/`.
 
-For that native mechanism, MAP ships `.claude/skills/example-skill/SKILL.md` — a starting point for Claude-Code-specific, invocable skills (as opposed to the passive context docs above). Copy the folder, rename it, and Claude Code auto-discovers it; nothing in `AGENTS.md` needs to change. It's Claude-Code-only, so it lives under `.claude/` alongside `.claude/rules/` rather than in the tool-agnostic `docs/` tree.
+For that native mechanism, MAP ships `.claude/skills/example-skill/SKILL.example.md` — a starting point for Claude-Code-specific, invocable skills (as opposed to the passive context docs above). It's named `.example.md` so Claude Code doesn't list the template itself as a skill. Copy the folder, rename it and the file (to `SKILL.md`), and Claude Code auto-discovers it; nothing in `AGENTS.md` needs to change. It's Claude-Code-only, so it lives under `.claude/` alongside `.claude/rules/` rather than in the tool-agnostic `docs/` tree.
 
 ### Hub-and-spoke: one recurring shape
 

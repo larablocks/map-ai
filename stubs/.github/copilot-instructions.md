@@ -14,7 +14,7 @@ Load CLAUDE.local.md if it exists or equivalent local rules file for your tool �
 
 ## Session start ritual
 0. First-run check: if this file's header above still shows an unfilled name/stack/date placeholder, or docs/STATUS.md / docs/ARCHITECTURE.md still show their bracket placeholders (e.g. a milestone or system-overview placeholder), this project has never been initialized by an AI agent — before doing anything else, including responding to the developer's first message: read the codebase (composer.json/package.json, README, directory structure) to understand what it is, fill in this file's header/Commands section if still unfilled, then replace docs/STATUS.md's and docs/ARCHITECTURE.md's placeholders with real content based on what you found
-1. Read docs/STATUS.md — if it contains only placeholder text, tell developer to fill it in
+1. Read docs/STATUS.md
 2. Read docs/MEMORY.md — if missing, create it from docs/MEMORY.example.md (and docs/memory/gotchas.md, docs/memory/shared.md from their examples if also missing), then load it and note topic files — any other docs/memory/*.md a Load rule below names self-creates from its same-named .example.md the first time that rule fires
 3. Read docs/BUGS.md — note any blocking or high severity bugs before starting work
 4. Ask the developer what they want to work on before acting
@@ -91,7 +91,7 @@ New agent/API/integration/component docs → scan the target folder's frontmatte
 
 ## Hard rules
 - IMPORTANT: Never delete files, database records, or data without explicit developer confirmation
-- IMPORTANT: Never modify AGENTS.md, CLAUDE.md, GEMINI.md, or .claude/rules/*.md without explicit developer instruction — these are MAP configuration files, not AI-maintained docs. Running `doctor.sh`/`Doctor::fix()` counts as that instruction — it only ever applies pure additions or safe note/comment swaps, never rewrites real content
+- IMPORTANT: Never modify AGENTS.md, CLAUDE.md, GEMINI.md, or .claude/rules/*.md without explicit developer instruction (the first-run check's header/Commands fill-in above is the one exception) — these are MAP configuration files, not AI-maintained docs. Running `doctor.sh`/`Doctor::fix()` counts as that instruction — it only ever applies pure additions or safe note/comment swaps, never rewrites real content
 - Use YYYY-MM-DD for all dates in all files
 - IMPORTANT: Only update docs/TESTING_COVERAGE.md after running coverage — never estimate without fresh output
 - IMPORTANT: Never skip the session start ritual

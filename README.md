@@ -74,7 +74,7 @@ MAP defines a set of **write rules** — declarative triggers built into `AGENTS
 
 Writes happen immediately — not deferred to session end, not optional. When the AI finds a bug mid-task, it appends to `BUGS.md` before continuing. When it makes an architectural call, it records the decision and reasoning before moving on. The priority order is fixed: `BUGS.md` first, `ARCHITECTURE_HISTORY.md` second, everything else after.
 
-At session end the AI updates `docs/STATUS.md` with current project health and routes everything learned during the session to the appropriate `docs/memory/` file.
+At session end the AI updates `docs/STATUS.md` with current project health (moving older progress entries to `docs/STATUS_ARCHIVE.md`, since `STATUS.md` loads every session) and routes everything learned during the session to the appropriate `docs/memory/` file.
 
 The result is documentation that reflects what is actually true about the project right now — maintained continuously as a side effect of development work, not as a separate task someone needs to remember to do.
 
@@ -287,7 +287,11 @@ The "is this safe to replace" line is drawn narrowly and mechanically, not by gu
 - **A complete HTML comment block** (`<!-- ... -->`, possibly spanning several lines) on both sides.
 - **A single-line change inside a fenced code block** where only the trailing `  # comment` differs — the real command before it must be byte-identical on both sides. This one is scoped to fenced code specifically: `#` has no reserved meaning in prose (e.g. `See issue #123`), so outside a code fence a matching prefix isn't a reliable signal and the change is left for a human.
 
-Real content (bug entries, schema tables, decision records, filled-in commands) is never written in any of these three forms, so all three are safe to always take from the stub. Anything else — prose bullets, headings, arbitrary reworded lines, or a comment change outside a fence — is exactly the shape real project content also takes, so it's left for a human every time.
+Real content (bug entries, schema tables, decision records, filled-in commands) is rarely written in these forms, but a project can still write its own italic note where the stub has one — for example, its own description of a coverage area in `TESTING_COVERAGE.md`. So a note or comment is only swapped when the two versions share at least 30% of their words of 4+ characters (measured against the shorter one): every real rewording of a stub note has scored 0.36 or more, while a project's own note in the same spot shares almost nothing. Below that, it's reported as `outdated-scaffold-file` instead.
+
+One more guard covers pure additions: in a `docs/` file, a hunk made only of placeholder lines (a `[bracketed]` placeholder or `YYYY-MM-DD`, not inside an italic note or HTML comment) is skipped. That's example content the project deleted on purpose, such as a table row it doesn't use, not new template content.
+
+Anything else — prose bullets, headings, arbitrary reworded lines, or a comment change outside a fence — is exactly the shape real project content also takes, so it's left for a human every time.
 
 ### `doctor.sh` — the same checks, no PHP required
 
@@ -338,7 +342,7 @@ docs/TESTING_COVERAGE.md           — coverage tracking (AI-maintained from out
 docs/METRICS_HISTORY.md            — dated metrics log for leadership (AI-maintained, append-only)
 docs/STATUS_ARCHIVE.md             — older STATUS.md progress entries (append-only, not loaded each session)
 
-docs/MEMORY.example.md             — memory index template (copy to MEMORY.md)
+docs/MEMORY.example.md             — memory index template (MEMORY.md is created from it on install)
 docs/memory/gotchas.example.md     — critical mistakes to avoid
 docs/memory/framework.example.md   — framework/language surprises
 docs/memory/database.example.md    — database behaviour surprises

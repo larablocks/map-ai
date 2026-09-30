@@ -367,7 +367,7 @@ it('auto-replaces a reworded italic note line, leaving real content and non-note
         $newStubsPath.'/docs/GLOSSARY.md',
         str_replace(
             '_Claude-maintained — append immediately when a project-specific term is encountered; human reviews for accuracy_',
-            '_Human-maintained — add entries when domain-specific language causes confusion_',
+            '_Claude-maintained — add a term the first time a newcomer would need it explained; human reviews for accuracy_',
             file_get_contents($newStubsPath.'/docs/GLOSSARY.md')
         )
     );
@@ -380,7 +380,7 @@ it('auto-replaces a reworded italic note line, leaving real content and non-note
     $this->doctor->fix($newStubsPath, $this->tempDir);
     $patched = file_get_contents($this->tempDir.'/docs/GLOSSARY.md');
 
-    expect($patched)->toContain('_Human-maintained — add entries when domain-specific language causes confusion_');
+    expect($patched)->toContain('_Claude-maintained — add a term the first time a newcomer would need it explained; human reviews for accuracy_');
     expect($patched)->not->toContain('_Claude-maintained — append immediately');
     expect($patched)->toContain("This project's bug ID convention, referenced from docs/BUGS.md");
 
@@ -534,7 +534,7 @@ it('fixableHunks() previews what applyHunks() would write, for a caller that wan
         $glossaryPath,
         str_replace(
             '_Claude-maintained — append immediately when a project-specific term is encountered; human reviews for accuracy_',
-            '_Human-maintained — add entries when domain-specific language causes confusion_',
+            '_Claude-maintained — add a term the first time a newcomer would need it explained; human reviews for accuracy_',
             file_get_contents($glossaryPath)
         )
     );
@@ -544,7 +544,7 @@ it('fixableHunks() previews what applyHunks() would write, for a caller that wan
     expect($hunks)->toHaveCount(1);
     expect($hunks[0]['lines'])->toBe(['_Claude-maintained — append immediately when a project-specific term is encountered; human reviews for accuracy_']);
     // Nothing written yet — fixableHunks() only previews.
-    expect(file_get_contents($glossaryPath))->toContain('_Human-maintained');
+    expect(file_get_contents($glossaryPath))->toContain('the first time a newcomer would need it explained');
 
     $this->doctor->applyHunks($glossaryPath, $hunks);
 
@@ -568,4 +568,26 @@ it('fixableHunks() never includes a hunk that would discard a filled-in placehol
     // The placeholder guard rejects this hunk outright — there's nothing fixable
     // to preview at all, not just a hunk with the placeholder line filtered out.
     expect($hunks)->toBe([]);
+});
+
+it('leaves a project\'s own italic note and its deleted placeholder lines alone', function () {
+    (new Installer)->install($this->stubsPath, $this->tempDir);
+    fillLikeARealProject($this->tempDir);
+    $before = array_map(fn ($f) => file_get_contents("{$this->tempDir}/$f"), [
+        'TESTING_COVERAGE' => 'docs/TESTING_COVERAGE.md',
+        'CODE_PATTERNS' => 'docs/CODE_PATTERNS.md',
+        'METRICS_HISTORY' => 'docs/METRICS_HISTORY.md',
+    ]);
+
+    $fixable = array_filter(
+        $this->doctor->check($this->stubsPath, $this->tempDir),
+        fn (array $f) => $f['fixable'] ?? false
+    );
+    expect(array_column($fixable, 'file'))->not->toContain('docs/CODE_PATTERNS.md', 'docs/METRICS_HISTORY.md', 'docs/TESTING_COVERAGE.md');
+
+    $this->doctor->fix($this->stubsPath, $this->tempDir);
+
+    expect(file_get_contents("{$this->tempDir}/docs/TESTING_COVERAGE.md"))->toBe($before['TESTING_COVERAGE']);
+    expect(file_get_contents("{$this->tempDir}/docs/CODE_PATTERNS.md"))->toBe($before['CODE_PATTERNS']);
+    expect(file_get_contents("{$this->tempDir}/docs/METRICS_HISTORY.md"))->toBe($before['METRICS_HISTORY']);
 });

@@ -314,7 +314,7 @@ it('auto-replaces a reworded italic note line, leaving real content alone, match
         $syntheticRoot.'/stubs/docs/GLOSSARY.md',
         str_replace(
             '_Claude-maintained — append immediately when a project-specific term is encountered; human reviews for accuracy_',
-            '_Human-maintained — add entries when domain-specific language causes confusion_',
+            '_Claude-maintained — add a term the first time a newcomer would need it explained; human reviews for accuracy_',
             file_get_contents($syntheticRoot.'/stubs/docs/GLOSSARY.md')
         )
     );
@@ -331,7 +331,7 @@ it('auto-replaces a reworded italic note line, leaving real content alone, match
     runDoctorSh($this->tempDir, fix: true, mapAiDir: $syntheticRoot);
     $bashPatched = file_get_contents($this->tempDir.'/docs/GLOSSARY.md');
 
-    expect($bashPatched)->toContain('_Human-maintained — add entries when domain-specific language causes confusion_');
+    expect($bashPatched)->toContain('_Claude-maintained — add a term the first time a newcomer would need it explained; human reviews for accuracy_');
     expect($bashPatched)->not->toContain('_Claude-maintained — append immediately');
     expect($bashPatched)->toContain("This project's bug ID convention");
     expect($bashPatched)->toBe($phpPatched);
@@ -351,7 +351,7 @@ it('--interactive applies a fixable hunk to a file when the developer confirms y
         $syntheticRoot.'/stubs/docs/GLOSSARY.md',
         str_replace(
             '_Claude-maintained — append immediately when a project-specific term is encountered; human reviews for accuracy_',
-            '_Human-maintained — add entries when domain-specific language causes confusion_',
+            '_Claude-maintained — add a term the first time a newcomer would need it explained; human reviews for accuracy_',
             file_get_contents($syntheticRoot.'/stubs/docs/GLOSSARY.md')
         )
     );
@@ -359,12 +359,12 @@ it('--interactive applies a fixable hunk to a file when the developer confirms y
     $result = runDoctorShInteractive($this->tempDir, "y\n", $syntheticRoot);
 
     expect($result['output'])->toContain('docs/GLOSSARY.md has new template content');
-    expect($result['output'])->toContain('+ _Human-maintained — add entries when domain-specific language causes confusion_');
+    expect($result['output'])->toContain('+ _Claude-maintained — add a term the first time a newcomer would need it explained; human reviews for accuracy_');
     expect($result['output'])->toContain('[FIXED]  docs/GLOSSARY.md patched with new template content');
     expect($result['exit'])->toBe(0);
 
     $patched = file_get_contents($this->tempDir.'/docs/GLOSSARY.md');
-    expect($patched)->toContain('_Human-maintained — add entries when domain-specific language causes confusion_');
+    expect($patched)->toContain('_Claude-maintained — add a term the first time a newcomer would need it explained; human reviews for accuracy_');
     expect($patched)->not->toContain('_Claude-maintained — append immediately');
 
     shell_exec('rm -rf '.escapeshellarg($syntheticRoot));
@@ -382,7 +382,7 @@ it('--interactive leaves a fixable hunk untouched when the developer declines wi
         $syntheticRoot.'/stubs/docs/GLOSSARY.md',
         str_replace(
             '_Claude-maintained — append immediately when a project-specific term is encountered; human reviews for accuracy_',
-            '_Human-maintained — add entries when domain-specific language causes confusion_',
+            '_Claude-maintained — add a term the first time a newcomer would need it explained; human reviews for accuracy_',
             file_get_contents($syntheticRoot.'/stubs/docs/GLOSSARY.md')
         )
     );
@@ -573,4 +573,20 @@ it('never replaces a filled-in placeholder with the stub still showing YYYY-MM-D
     expect($bashStatus)->toBe($phpStatus);
 
     shell_exec('rm -rf '.escapeshellarg($phpTarget));
+});
+
+it('leaves a project\'s own italic note and its deleted placeholder lines alone, matching Doctor.php', function () {
+    (new Installer)->install(Installer::stubsPath(), $this->tempDir);
+    fillLikeARealProject($this->tempDir);
+    $files = ['docs/TESTING_COVERAGE.md', 'docs/CODE_PATTERNS.md', 'docs/METRICS_HISTORY.md'];
+    $before = array_map(fn ($f) => file_get_contents("{$this->tempDir}/$f"), $files);
+
+    $check = runDoctorSh($this->tempDir);
+    foreach ($files as $file) {
+        expect($check['output'])->not->toContain("missing-template-updates $file");
+    }
+
+    runDoctorSh($this->tempDir, fix: true);
+
+    expect(array_map(fn ($f) => file_get_contents("{$this->tempDir}/$f"), $files))->toBe($before);
 });

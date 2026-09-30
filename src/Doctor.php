@@ -483,7 +483,11 @@ class Doctor
         fclose($pipes[2]);
         proc_close($process);
 
-        return $this->classifyDiffHunks($output, $this->fencedCodeLines($targetFile));
+        return $this->classifyDiffHunks(
+            $output,
+            $this->fencedCodeLines($targetFile),
+            basename(dirname($stubFile)) === 'docs'
+        );
     }
 
     /** @return array<int, true> set of 1-indexed line numbers inside a ``` fence */
@@ -517,10 +521,16 @@ class Doctor
      * the trailing `  # comment` differs and the real command before it is unchanged.
      * Any other modification is left for a human.
      *
+     * Two exceptions keep a filled-in project's own content safe. In a docs/ file, a
+     * pure addition made only of placeholder lines is skipped: it's example content the
+     * project deleted, not new template content. And a note swap only happens when the
+     * two notes share most of their words (an updated template note); a project's own
+     * rewritten note is left for a human instead.
+     *
      * @param  array<int, true>  $targetFenceLines
      * @return array{appliableHunks: list<array{start: int, count: int, lines: list<string>}>, hasModifications: bool}
      */
-    private function classifyDiffHunks(string $diffOutput, array $targetFenceLines): array
+    private function classifyDiffHunks(string $diffOutput, array $targetFenceLines, bool $isDocsFile = false): array
     {
         $appliableHunks = [];
         $hasModifications = false;
@@ -555,13 +565,16 @@ class Doctor
             }
 
             if ($oldCount === 0 && $newCount > 0) {
-                $appliableHunks[] = ['start' => $oldStart, 'count' => 0, 'lines' => $added];
+                if (! ($isDocsFile && $this->isAllPlaceholderLines($added))) {
+                    $appliableHunks[] = ['start' => $oldStart, 'count' => 0, 'lines' => $added];
+                }
             } elseif ($oldCount > 0 && $newCount > 0) {
                 $isInlineCommentHunk = $oldCount === 1 && $newCount === 1
                     && isset($targetFenceLines[$oldStart])
                     && $this->isSafeInlineCommentModification($removed[0], $added[0]);
 
-                $looksSafe = $this->isSafeNoteModification($removed, $added) || $isInlineCommentHunk;
+                $looksSafe = ($this->isSafeNoteModification($removed, $added) && $this->notesLookRelated($removed, $added))
+                    || $isInlineCommentHunk;
 
                 if ($looksSafe && ! $this->stubPlaceholderWasFilled($removed, $added)) {
                     $appliableHunks[] = ['start' => $oldStart - 1, 'count' => $oldCount, 'lines' => $added];
@@ -629,6 +642,57 @@ class Doctor
         }
 
         return false;
+    }
+
+    /**
+     * True when every non-blank line is example content: it names a `[bracketed]`
+     * placeholder or YYYY-MM-DD and isn't an italic note or HTML comment (those are
+     * the stub's instructions, which can carry placeholders too).
+     *
+     * @param  list<string>  $lines
+     */
+    private function isAllPlaceholderLines(array $lines): bool
+    {
+        $sawLine = false;
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            if ($trimmed === '') {
+                continue;
+            }
+            $sawLine = true;
+            if (preg_match('/^_.*_$/', $trimmed) || str_starts_with($trimmed, '<!--')
+                || ! preg_match('/\[[^\[\]]*\]|YYYY-MM-DD/', $trimmed)) {
+                return false;
+            }
+        }
+
+        return $sawLine;
+    }
+
+    /**
+     * An updated template note keeps most of the old one's words; a project's own note
+     * in the same spot shares few. Compares the sets of lowercased words of 4+ characters
+     * and needs 30% of the smaller set in common (real template rewordings
+     * have all scored 0.36 or more; a project's own note, far less). Mirrors doctor.sh's notes_look_related.
+     *
+     * @param  list<string>  $removed
+     * @param  list<string>  $added
+     */
+    private function notesLookRelated(array $removed, array $added): bool
+    {
+        $words = function (array $lines): array {
+            preg_match_all('/[a-z0-9_.\/-]{4,}/', strtolower(implode("\n", $lines)), $m);
+
+            return array_unique($m[0]);
+        };
+        $a = $words($removed);
+        $b = $words($added);
+        $smaller = min(count($a), count($b));
+        if ($smaller === 0) {
+            return count($a) === count($b);
+        }
+
+        return count(array_intersect($a, $b)) * 10 >= $smaller * 3;
     }
 
     /** @param  list<string>  $lines */

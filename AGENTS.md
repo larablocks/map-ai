@@ -64,7 +64,7 @@ _Priority order: BUGS.md first, then ARCHITECTURE_HISTORY.md, then others_
 - Custom command added, changed, or removed → update docs/COMMANDS.md in the relevant category (add, edit, or delete the entry and its Quick index row), note if destructive
 - Agent/API/integration/component changes materially → update its docs/agents|api|integrations|architecture/[name].md file (including its frontmatter description); new docs/architecture/[name].md → also add its row to ARCHITECTURE.md's Component docs table
 - A design token changes, Docker/environment config changes, a setup step changes, or a compliance obligation changes → do NOT edit docs/DESIGN.md, docs/DOCKER.md, docs/SETUP.md, or docs/COMPLIANCE.md directly; draft the proposed change inline in your response and ask the developer to confirm before writing it — for docs/COMPLIANCE.md, check its own Constraints on AI-assisted changes section first: some changes require a specific artifact in place (e.g. a documented agreement), not just a verbal yes
-- Task complete → ask the developer if they want a QA file generated; if yes, check branch name for ticket number (e.g. ABC-123) and create docs/qa/[TICKET].md or docs/qa/[feature-slug].md from the example
+- Developer asks for a QA file (never offer one unprompted) → check branch name for ticket number (e.g. ABC-123) and create docs/qa/[TICKET].md or docs/qa/[feature-slug].md from the example
 
 ## Session end — do this before closing
 1. Update docs/STATUS.md — milestone/feature progress, health indicators, project-level next priorities

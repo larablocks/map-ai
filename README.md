@@ -32,6 +32,10 @@ Without it, each AI session starts from zero. With it, sessions start informed.
 
 Both files carry `BUG-N` IDs and are merged by MAP's own git merge driver (see [Merging MAP docs](#merging-map-docs)), so two branches adding entries at the same time combine cleanly instead of producing conflict markers, a bug one branch moved to the archive stays moved, and if two branches independently assign the same `BUG-N` the incoming one is renumbered to the next free number.
 
+### Merge conflicts in the docs mostly resolve themselves
+
+Every branch edits the same docs, so they conflict more than code does. MAP registers its own git merge driver for them. It keeps entries from both branches, renumbers clashing `BUG-N`s, and hands anything it can't settle to Claude, always stopping for your review. The `map-resolve` skill walks you through what's left. See [Merging MAP docs](#merging-map-docs).
+
 ### Security and testing standards apply every session
 
 `.claude/rules/security.md` and `.claude/rules/testing.md` load automatically each Claude Code session. The AI follows your coverage requirements and security practices without being reminded.
@@ -181,6 +185,18 @@ Two patterns, depending on your ecosystem:
 
 MAP docs are edited on every branch, so they conflict on merge more than most files. MAP ships a git merge driver, `.map/merge.sh`, and `.gitattributes` routes every file an AI agent writes to through it: all of `docs/` (including the `agents|api|architecture|integrations|qa/` folders and `docs/memory/shared.md`), plus `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, and `.claude/rules/*.md`.
 
+**The helpers at a glance:**
+
+| Helper | What it does | When it runs |
+|---|---|---|
+| `.map/merge.sh` (the merge driver) | Resolves conflicts in MAP docs: git's merge, then deterministic rules, then Claude for what's left | Automatically, on every `git merge` / `rebase` / `cherry-pick` / `pull` that touches a MAP doc |
+| `bash .map/merge.sh --resolve <file>` | Re-runs the driver on a file git already left conflicted | By hand, e.g. when the merge ran before the driver was registered |
+| `bash .map/merge.sh --check-bugs` | Lists `BUG-N`s used twice across `BUGS.md` / `BUGS_ARCHIVE.md` | Every Claude Code session (SessionStart hook), `doctor`, or by hand |
+| `bash .map/merge.sh --fix-bugs` | Renumbers the duplicate in `BUGS.md` | By hand, once you've confirmed the two entries are different bugs |
+| `map-resolve` skill | Claude Code resolves what the driver left, reviews what it already resolved, and waits for your OK before `git add` | Ask Claude Code to resolve or review the conflicts |
+| SessionStart hook (`map-first-run-check.sh`) | Registers the driver in a fresh clone and reports `BUG-N` clashes | Every Claude Code session |
+| `doctor` | Reports `merge-driver-not-registered` and `duplicate-bug-number`; `--fix` registers the driver | When you run it |
+
 Each conflicting file goes through up to three passes. Each pass only touches what the one before couldn't settle:
 
 1. **Git's own merge.** If git merges the file cleanly, that result is used unchanged. The only addition is renumbering duplicate `BUG-N`s, below. One check comes first. Git matches identical lines, and MAP entries repeat the same field lines (`- **Status:** open`), so a "clean" merge can land an edit in the wrong entry. For example, one branch archives BUG-1 while the other updates BUG-1's status, and git applies that status change to BUG-2. So the result is only used if every entry neither branch touched comes out unchanged, and every entry one branch changed comes out as that branch's version. Otherwise the file goes to pass 2.
@@ -237,7 +253,7 @@ The driver, `install.sh`, `doctor.sh` and the hooks are plain bash and POSIX awk
 
 For a brand-new project, letting `install.sh` / `Installer::install()` copy the full template is correct — there's nothing to lose. For a project that's had MAP running for a while, its `AGENTS.md` and other `SCAFFOLD_FILES` likely carry project-specific additions the template doesn't know about — extra Hard rules, custom Load rules for project-specific docs, and so on.
 
-Never regenerate an existing project's `AGENTS.md` (or any other `SCAFFOLD_FILES` entry) wholesale from a newer template — that clobbers real customization. Diff the new template's changed sections against the project's current file and merge in only what's new or changed, preserving anything project-specific. `MANAGED_FILES` (`.cursor/rules/agents.mdc` and the `*.example.md` templates) are the exception — those are meant to always match the template exactly, and `install.sh` / `Installer::install()` already overwrite them automatically on every run (though only when content actually differs — an identical file is left untouched). `.claude/rules/security.md`, `.claude/rules/testing.md`, `.github/copilot-instructions.md`, and `.claude/skills/example-skill/SKILL.md` are all `SCAFFOLD_FILES`, not `MANAGED_FILES` — each is a starting point developers customize in place (coverage thresholds, security rules, project-specific commands), so all are protected the same way `AGENTS.md` is.
+Never regenerate an existing project's `AGENTS.md` (or any other `SCAFFOLD_FILES` entry) wholesale from a newer template — that clobbers real customization. Diff the new template's changed sections against the project's current file and merge in only what's new or changed, preserving anything project-specific. `MANAGED_FILES` (`.cursor/rules/agents.mdc` and the `*.example.md` templates) are the exception — those are meant to always match the template exactly, and `install.sh` / `Installer::install()` already overwrite them automatically on every run (though only when content actually differs — an identical file is left untouched). `.claude/rules/security.md`, `.claude/rules/testing.md`, `.github/copilot-instructions.md`, and `.claude/skills/example-skill/SKILL.example.md` are all `SCAFFOLD_FILES`, not `MANAGED_FILES` — each is a starting point developers customize in place (coverage thresholds, security rules, project-specific commands), so all are protected the same way `AGENTS.md` is.
 
 ### Doctor — checking and repairing drift automatically
 
@@ -356,8 +372,18 @@ docs/agents/agent.example.md       — template for documenting a specific agent
 docs/api/api.example.md            — template for documenting an API (name + description frontmatter)
 docs/architecture/architecture.example.md — template for documenting a subsystem or component (name + description frontmatter)
 docs/integrations/integration.example.md — template for documenting an integration (name + description frontmatter)
-docs/qa/qa.example.md              — template for a completed feature's QA notes
+docs/qa/qa.example.md              — template for a completed feature's QA notes (created only when you ask)
 ```
+
+Install also creates each developer's own files from the templates above. They're gitignored, so every developer gets a fresh copy:
+
+```
+docs/MEMORY.md                     — memory index (always loaded)
+docs/memory/gotchas.md             — always loaded
+docs/memory/database.md, testing.md, environment.md, performance.md, agents.md — loaded when relevant
+```
+
+`docs/memory/shared.md` (committed, always loaded) is created by the AI's first session if it's missing, and the stack-specific memory file (e.g. `docs/memory/laravel.md`) the first time its Load rule applies. `CLAUDE.local.md` (gitignored) is yours to create for personal overrides.
 
 ### Cheap discovery for per-item docs
 

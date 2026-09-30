@@ -12,7 +12,7 @@ function fillLikeARealProject(string $root): void
             "_Auth, tenant DB routing, and schema migration commands — a bug here causes wrong-database writes, auth bypass, or a broken schema migration._\n",
         ],
         'docs/CODE_PATTERNS.md' => ["[Things in the codebase that should not be copied. Name the specific file/class.]\n", ''],
-        'docs/METRICS_HISTORY.md' => ["| Milestones complete | [N]/[M] | — |\n", ''],
+        'docs/METRICS_HISTORY.md' => ["| Milestones complete | [N]/[M] | — (remove row if not using phases) |\n", ''],
     ];
     foreach ($edits as $file => [$from, $to]) {
         $path = "$root/$file";

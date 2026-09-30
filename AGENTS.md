@@ -21,13 +21,12 @@ Load @CLAUDE.local.md if it exists or equivalent local rules file for your tool 
 _If any command above still shows a `[...]` placeholder, detect it by reading composer.json, package.json, and Makefile, then replace the placeholder in this file._
 
 ## Load when relevant
-_Plain paths on purpose, not @-imports — an @-import loads every session. Read each file only when its rule applies_
+_Read each file below only when its rule applies, not at session start — keep these as plain paths (tools that support @-imports load an @-prefixed path every session)_
 Read docs/ARCHITECTURE.md when working on structure or new features
 Read docs/ARCHITECTURE_HISTORY.md when revisiting an architectural choice
 Read docs/CODE_PATTERNS.md when writing application code, migrations, config or scripts
 Read docs/SCHEMA.md when touching the database or internal service contracts
 Read docs/COMPLIANCE.md when touching data classified as sensitive, exports, deletions, or third-party data integrations
-Read docs/BUGS.md when writing tests or modifying areas with known issues
 Read docs/TESTING_COVERAGE.md when writing or reviewing tests
 Read docs/DOCKER.md when running commands or diagnosing environment issues (skip if project has no Docker)
 Read docs/SETUP.md when helping with local dev or onboarding questions
